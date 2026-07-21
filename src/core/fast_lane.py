@@ -21,6 +21,9 @@ class FastLaneRouter:
             "Mahnung", "Zahlungserinnerung", "Vertrag", "Versicherung",
             "Steuerbescheid", "Unlesbar"
         }
+        self._protected_document_types_normalized = {
+            value.casefold() for value in self.protected_document_types
+        }
 
     def _is_missing_field(self, field_dict: Dict[str, Any]) -> bool:
         if not field_dict:
@@ -96,7 +99,7 @@ class FastLaneRouter:
         }
 
         # Validate basic structure
-        if not data or data.get("input_valid") is False:
+        if not data or data.get("input_valid") is False or data.get("input_error"):
             result["blocking_reasons"].append("invalid_input")
             return result
 
@@ -106,7 +109,11 @@ class FastLaneRouter:
         # "leere Seite"
         # However context_character_count might be 0
         ctx_chars = data.get("context_character_count", 0)
-        if not pages and ctx_chars == 0:
+        has_page_text = any(
+            isinstance(page, dict) and str(page.get("text") or "").strip()
+            for page in pages
+        )
+        if ctx_chars <= 0 and not has_page_text:
             result["blocking_reasons"].append("no_pages")
             return result
 
@@ -131,7 +138,7 @@ class FastLaneRouter:
 
         # B. MANUAL_REVIEW conditions
         manual_review_reasons = []
-        if doc_type in self.protected_document_types:
+        if str(doc_type).strip().casefold() in self._protected_document_types_normalized:
             manual_review_reasons.append("protected_document_type")
         if ocr_score < 0.70:
             manual_review_reasons.append("low_ocr_score")
@@ -139,6 +146,12 @@ class FastLaneRouter:
             manual_review_reasons.append("low_boundary_confidence")
         if dup_warn:
             manual_review_reasons.append("duplicate_warning")
+
+        boundary_conflicts = data.get("boundary_conflicts")
+        if not boundary_conflicts and isinstance(data.get("boundary_result"), dict):
+            boundary_conflicts = data["boundary_result"].get("conflicts")
+        if boundary_conflicts:
+            manual_review_reasons.append("boundary_conflict")
 
         if doc_status in ["AMBIGUOUS", "INSUFFICIENT_TEXT"]:
             manual_review_reasons.append("ambiguous_document_type")
@@ -150,6 +163,11 @@ class FastLaneRouter:
         if amount_res.get("conflicts"):
             # amount conflicts lead to manual review as well, user rules say "Betragskonflikt"
             manual_review_reasons.append("amount_conflict")
+
+        if supplier_res.get("conflicts"):
+            manual_review_reasons.append("supplier_conflict")
+        if inv_num_res.get("conflicts"):
+            manual_review_reasons.append("invoice_number_conflict")
 
         if manual_review_reasons:
             result["route"] = "MANUAL_REVIEW"
@@ -163,7 +181,14 @@ class FastLaneRouter:
             missing.append("supplier")
         if self._is_missing_field(inv_num_res):
             missing.append("invoice_number")
-        if not self._is_amount_mathematically_correct(amount_res):
+        amount_fields_missing = []
+        for field in ["net", "tax", "gross"]:
+            value = amount_res.get(field)
+            if not isinstance(value, dict) or value.get("value") is None:
+                amount_fields_missing.append(field)
+        if amount_fields_missing:
+            missing.extend(amount_fields_missing)
+        elif not self._is_amount_mathematically_correct(amount_res):
             missing.append("amount_details")
 
         # C. FAST_LANE conditions
@@ -184,7 +209,7 @@ class FastLaneRouter:
             fast_lane_ok = False
 
         amt_conf = amount_res.get("confidence", 0.0)
-        if "amount_details" in missing or amt_conf < 0.90:
+        if any(field in missing for field in ("net", "tax", "gross", "amount_details")) or amt_conf < 0.90:
             fast_lane_ok = False
 
         if fast_lane_ok:
@@ -208,7 +233,8 @@ class FastLaneRouter:
         evidences = [ocr_score, boundary_conf]
         if "supplier" not in missing: evidences.append(sup_conf)
         if "invoice_number" not in missing: evidences.append(inv_conf)
-        if "amount_details" not in missing: evidences.append(amt_conf)
+        if not any(field in missing for field in ("net", "tax", "gross", "amount_details")):
+            evidences.append(amt_conf)
         if doc_conf > 0: evidences.append(doc_conf)
 
         base_conf = min(evidences) if evidences else 0.0

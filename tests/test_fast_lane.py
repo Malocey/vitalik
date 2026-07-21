@@ -226,3 +226,51 @@ def test_config_token_time_estimation():
     assert res["route"] == "TARGETED_LLM"
     assert res["estimated_tokens"] == 1350
     assert res["estimated_time_seconds"] == 135.0
+
+
+def test_explicit_input_error_is_rejected():
+    doc = get_base_valid_doc()
+    doc["input_error"] = "corrupt_pdf"
+    result = FastLaneRouter().route(doc)
+    assert result["route"] == "REJECTED"
+    assert "invalid_input" in result["blocking_reasons"]
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "reason"),
+    [
+        ("boundary_conflicts", ["overlap"], "boundary_conflict"),
+        ("supplier_result", {"value": "A", "found": True, "confidence": 0.99,
+                             "conflicts": ["multiple_suppliers"]}, "supplier_conflict"),
+        ("invoice_number_result", {"value": "1", "found": True, "confidence": 0.99,
+                                   "conflicts": ["multiple_numbers"]}, "invoice_number_conflict"),
+    ],
+)
+def test_conflicts_require_manual_review(field, value, reason):
+    doc = get_base_valid_doc()
+    doc[field] = value
+    result = FastLaneRouter().route(doc)
+    assert result["route"] == "MANUAL_REVIEW"
+    assert reason in result["blocking_reasons"]
+
+
+def test_missing_amounts_are_counted_individually():
+    doc = get_base_valid_doc()
+    doc["amount_result"] = {}
+    result = FastLaneRouter().route(doc)
+    assert result["route"] == "FULL_LLM"
+    assert result["missing_fields"] == ["net", "tax", "gross"]
+
+
+def test_protected_type_matching_is_case_insensitive():
+    doc = get_base_valid_doc()
+    doc["document_type_result"]["document_type"] = "kontoauszug"
+    result = FastLaneRouter().route(doc)
+    assert result["route"] == "MANUAL_REVIEW"
+
+
+def test_pages_without_text_or_context_are_rejected():
+    doc = get_base_valid_doc()
+    doc["pages"] = [{}]
+    doc["context_character_count"] = 0
+    assert FastLaneRouter().route(doc)["route"] == "REJECTED"

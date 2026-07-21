@@ -64,3 +64,13 @@ Für LLM-Routen werden die benötigten Token und die Dauer geschätzt basierend 
 * `DEFAULT_TOKENS_PER_SECOND = 20.0`
 
 Für die Einsparungsberechnung bei Batch-Verarbeitungen (`route_batch`) wird eine Baseline von `50.0 Sekunden` (`baseline_llm_seconds_per_document`) pro Dokument angenommen, wenn ein LLM-Aufruf durch FAST_LANE vermieden wird.
+
+## Integration und Teststatus
+
+Der Router ist deterministisch und führt selbst keine OCR-, Netzwerk-, LLM- oder
+Persistenzoperationen aus. Er ist noch nicht in `ArchivePipeline` verdrahtet.
+Seine Ausgabe ist daher derzeit eine vorbereitete Entscheidungsschnittstelle.
+
+Die Integrationsprüfung deckt sichere Ablehnung, alle fünf Routen, Konflikte,
+fehlende Einzelfelder, Batchmetriken und konfigurierbare Schätzwerte ab. Ergebnisse
+und bekannte Grenzen stehen zentral in [TEST_STATUS.md](TEST_STATUS.md).

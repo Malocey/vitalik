@@ -121,6 +121,7 @@ class JobRepository:
                 UPDATE document_jobs
                 SET locked_by = ?, lock_expires_at = ?, updated_at = ?
                 WHERE job_id = ?
+                  AND status IN ('DISCOVERED', 'OCR_COMPLETE', 'ANALYSIS_COMPLETE', 'RETRY_PENDING')
                   AND (locked_by IS NULL OR lock_expires_at < ?)
             """, (worker_id, expires_at, now, job_id, now))
             return cursor.rowcount > 0
@@ -135,8 +136,8 @@ class JobRepository:
             cursor = conn.execute("""
                 UPDATE document_jobs
                 SET lock_expires_at = ?, updated_at = ?
-                WHERE job_id = ? AND locked_by = ?
-            """, (expires_at, now, job_id, worker_id))
+                WHERE job_id = ? AND locked_by = ? AND lock_expires_at >= ?
+            """, (expires_at, now, job_id, worker_id, now))
             return cursor.rowcount > 0
 
     def update_job_status(self, job_id: str, worker_id: str, new_status: str,
@@ -173,9 +174,9 @@ class JobRepository:
         query = f"""
             UPDATE document_jobs
             SET {", ".join(updates)}
-            WHERE job_id = ? AND locked_by = ?
+            WHERE job_id = ? AND locked_by = ? AND lock_expires_at >= ?
         """
-        params.extend([job_id, worker_id])
+        params.extend([job_id, worker_id, now])
 
         with conn:
             cursor = conn.execute(query, tuple(params))

@@ -45,3 +45,18 @@ Beispiel-Delays:
 ## Wiederaufnahme (Crash-Recovery)
 
 Stürzt ein Worker im Zustand `*_RUNNING` ab, sorgt die Wiederaufnahme dafür, dass der Job nicht blind weiterverarbeitet wird. Das System setzt den Status auf den letzten sicheren Checkpoint (z.B. von `ANALYSIS_RUNNING` zurück auf `OCR_COMPLETE`). Dadurch bleiben persistierte Zwischenergebnisse (die vor dem Checkpoint gespeichert wurden) gültig, während der unterbrochene Schritt sauber von vorne begonnen wird.
+
+## Sicherheitsgarantien
+
+Lease-Verlängerungen und Statusänderungen prüfen Job-ID, Besitzer und ein noch
+gültiges Ablaufdatum atomar im SQLite-Update. Ein finaler Job kann auch über die
+Repository-Schnittstelle nicht erneut geleast werden. Das schützt vor verspäteten
+Writes eines abgestürzten Workers.
+
+## Integration und Teststatus
+
+Die Engine verwendet derzeit eine eigene Datenbank und ist noch nicht in
+`ArchivePipeline`, RAG oder Wiki verdrahtet. Insbesondere ist ein atomarer
+End-to-End-Commit über Jobstatus, RAG und Wiki noch zu implementieren. Die lokalen
+Tests prüfen Leasing und Statuslogik; Ergebnisse und offene Abnahmekriterien stehen
+in [TEST_STATUS.md](TEST_STATUS.md).

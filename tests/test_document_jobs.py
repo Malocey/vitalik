@@ -192,3 +192,29 @@ def test_parallel_access():
     finally:
         if os.path.exists(db_path):
             os.remove(db_path)
+
+
+def test_expired_owner_cannot_renew_transition_or_commit():
+    repository = JobRepository(':memory:')
+    job_engine = DocumentJobEngine(repository=repository, lease_duration_seconds=0.01)
+    job_id = job_engine.create_job("path", "expired-owner", 1, 1)
+    assert job_engine.claim_next_job("old-worker") is not None
+    time.sleep(0.02)
+
+    assert not job_engine.renew_lease(job_id, "old-worker")
+    assert not job_engine.complete_stage(job_id, "old-worker", "OCR_RUNNING")
+
+
+def test_final_job_cannot_be_claimed_through_repository():
+    repository = JobRepository(':memory:')
+    job_engine = DocumentJobEngine(repository=repository)
+    job_id = job_engine.create_job("path", "final-job", 1, 1)
+    assert job_engine.claim_next_job("worker") is not None
+
+    for status in (
+        "OCR_RUNNING", "OCR_COMPLETE", "ANALYSIS_RUNNING",
+        "ANALYSIS_COMPLETE", "RAG_RUNNING", "COMMITTED",
+    ):
+        assert job_engine.complete_stage(job_id, "worker", status)
+
+    assert not repository.claim_job(job_id, "other-worker", 60)
