@@ -96,33 +96,6 @@ async def read_wiki_graph():
         return graph_file.read_text(encoding="utf-8")
     raise HTTPException(status_code=404, detail="wiki_graph.html nicht gefunden")
 
-# For fast SPA tab switching - return HTML content only (body stripped)
-@app.get("/api/tab-content/rag", response_class=HTMLResponse)
-async def get_rag_tab_content():
-    rag_file = DASHBOARD_DIR / "rag_playground.html"
-    if rag_file.exists():
-        content = rag_file.read_text(encoding="utf-8")
-        # Extract body content (everything between <body> and </body>)
-        start = content.find("<body>") + 6
-        end = content.find("</body>")
-        if start > 5 and end > start:
-            return content[start:end]
-        return content
-    raise HTTPException(status_code=404, detail="rag_playground.html nicht gefunden")
-
-@app.get("/api/tab-content/wiki", response_class=HTMLResponse)
-async def get_wiki_tab_content():
-    wiki_file = DASHBOARD_DIR / "wiki_graph.html"
-    if wiki_file.exists():
-        content = wiki_file.read_text(encoding="utf-8")
-        # Extract body content
-        start = content.find("<body>") + 6
-        end = content.find("</body>")
-        if start > 5 and end > start:
-            return content[start:end]
-        return content
-    raise HTTPException(status_code=404, detail="wiki_graph.html nicht gefunden")
-
 
 # API Endpoints
 @app.get("/api/stats")

@@ -70,7 +70,7 @@ def main():
         rag_context = "\n\n".join([r['content'] for r in results])
         user_prompt = f"Basierend auf folgendem Wissensstand:\n{rag_context}\n\nFrage: {query}"
         
-        print("[Generiere Antwort im Schreibstil von Vitalik...]\n")
+        print("[Generiere Antwort im Schreibstil von Vitali...]\n")
         response = default_llm_client.generate_completion(user_prompt, system_prompt=system_prompt)
         print(response)
         return

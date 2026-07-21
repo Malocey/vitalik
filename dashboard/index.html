@@ -376,24 +376,6 @@
             color: #a5b4fc;
             font-weight: 600;
         }
-
-        .main-view-container {
-            display: block;
-            animation: fadeIn 0.3s ease;
-            width: 100%;
-            min-height: calc(100vh - 180px);
-        }
-
-        .main-view-container iframe {
-            width: 100%;
-            height: 100%;
-            display: block;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
     </style>
 </head>
 <body>
@@ -403,20 +385,16 @@
         <div class="brand-title">
             <span>🥩</span> VG Delikatessen - Ordner-Scanner & RAG System
         </div>
-        <div id="main-tabs" style="display: flex; gap: 16px; align-items: center;">
-            <button id="tab-dashboard-btn" class="nav-btn active" style="color: #f8fafc; background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.3); font-weight: 600; font-size: 14px; padding: 8px 16px; border-radius: 10px; cursor: pointer; transition: all 0.2s; text-decoration: none;">🏠 Dashboard</button>
-            <a href="/rag" class="nav-btn" id="tab-rag-btn" style="color: #94a3b8; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05); font-weight: 600; font-size: 14px; padding: 8px 16px; border-radius: 10px; cursor: pointer; transition: all 0.2s; text-decoration: none;">🔍 RAG Playground</a>
-            <a href="/wiki-graph" class="nav-btn" id="tab-wiki-btn" style="color: #94a3b8; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05); font-weight: 600; font-size: 14px; padding: 8px 16px; border-radius: 10px; cursor: pointer; transition: all 0.2s; text-decoration: none;">🕸️ Wiki Graph</a>
+        <div style="display: flex; gap: 16px; align-items: center;">
+            <a href="/" style="color: #f8fafc; text-decoration: none; font-weight: 600; font-size: 14px; padding: 8px 16px; background: rgba(99, 102, 241, 0.15); border-radius: 10px; border: 1px solid rgba(99, 102, 241, 0.3); transition: all 0.2s;">🏠 Dashboard</a>
+            <a href="/rag" style="color: #94a3b8; text-decoration: none; font-weight: 600; font-size: 14px; padding: 8px 16px; background: rgba(255, 255, 255, 0.03); border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.05); transition: all 0.2s;" onmouseover="this.style.color='#f8fafc'; this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.color='#94a3b8'; this.style.background='rgba(255,255,255,0.03)'">🔍 RAG Playground</a>
+            <a href="/wiki-graph" style="color: #94a3b8; text-decoration: none; font-weight: 600; font-size: 14px; padding: 8px 16px; background: rgba(255, 255, 255, 0.03); border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.05); transition: all 0.2s;" onmouseover="this.style.color='#f8fafc'; this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.color='#94a3b8'; this.style.background='rgba(255,255,255,0.03)'">🕸️ Wiki Graph</a>
         </div>
         <div class="status-badge">
             <span class="pulse-dot"></span>
             <span>Local System Active</span>
         </div>
     </div>
-
-    <!-- Main Content Area -->
-    <div id="dashboard-content" class="main-view-container">
-    <!-- DASHBOARD CONTENT START -->
 
     <!-- Stats Grid -->
     <div class="stats-grid">
@@ -430,7 +408,7 @@
         </div>
         <div class="stat-card">
             <div class="stat-label">Personalisierter Schreibstil</div>
-            <div class="stat-val" id="stat-persona">Vitalik</div>
+            <div class="stat-val" id="stat-persona">Vitali</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">Verzeichnis-Scanner</div>
@@ -497,7 +475,7 @@
                 <div style="color: var(--text-muted); font-size: 13px;">Geben Sie eine Frage ein...</div>
             </div>
 
-            <div class="stat-label">Generierte Antwort (im Schreibstil von Vitalik):</div>
+            <div class="stat-label">Generierte Antwort (im Schreibstil von Vitali):</div>
             <div class="response-box" id="rag-response">
                 Die Antwort wird hier live angezeigt...
             </div>
@@ -749,65 +727,10 @@
             loadIndexAndLog();
         }
 
-        // Close dashboard-content div here
-        // (HTML structure wrapped above in main-view-container)
-
         loadStats();
         loadWikiPages();
         loadIndexAndLog();
         runRAGSearch();
-
-        // Main Tab Navigation
-        function switchMainTab(tabName) {
-            // Hide all views
-            document.getElementById('dashboard-content').style.display = 'none';
-            document.getElementById('rag-content').style.display = 'none';
-            document.getElementById('wiki-content').style.display = 'none';
-            
-            // Update buttons
-            document.querySelectorAll('.nav-btn').forEach(btn => {
-                btn.style.background = 'rgba(255, 255, 255, 0.03)';
-                btn.style.color = '#94a3b8';
-                btn.style.border = '1px solid rgba(255, 255, 255, 0.05)';
-            });
-            
-            if (tabName === 'dashboard') {
-                document.getElementById('dashboard-content').style.display = 'block';
-                document.getElementById('tab-dashboard-btn').style.background = 'rgba(99, 102, 241, 0.15)';
-                document.getElementById('tab-dashboard-btn').style.color = '#f8fafc';
-                document.getElementById('tab-dashboard-btn').style.border = '1px solid rgba(99, 102, 241, 0.3)';
-            } else if (tabName === 'rag') {
-                document.getElementById('rag-content').style.display = 'block';
-                document.getElementById('tab-rag-btn').style.background = 'rgba(99, 102, 241, 0.15)';
-                document.getElementById('tab-rag-btn').style.color = '#f8fafc';
-                document.getElementById('tab-rag-btn').style.border = '1px solid rgba(99, 102, 241, 0.3)';
-                loadRAGTab();
-            } else if (tabName === 'wiki') {
-                document.getElementById('wiki-content').style.display = 'block';
-                document.getElementById('tab-wiki-btn').style.background = 'rgba(99, 102, 241, 0.15)';
-                document.getElementById('tab-wiki-btn').style.color = '#f8fafc';
-                document.getElementById('tab-wiki-btn').style.border = '1px solid rgba(99, 102, 241, 0.3)';
-                loadWikiTab();
-            }
-        }
-
-        async function loadRAGTab() {
-            // iFrames load automatically - no action needed
-        }
-
-        async function loadWikiTab() {
-            // iFrames load automatically - no action needed
-        }
     </script>
-
-    <!-- RAG Content Container (iFrame) -->
-    <div id="rag-content" class="main-view-container" style="display: none;">
-        <iframe id="rag-frame" src="/rag" style="width: 100%; height: 600px; border: none; margin: 0; padding: 0;"></iframe>
-    </div>
-
-    <!-- Wiki Content Container (iFrame) -->
-    <div id="wiki-content" class="main-view-container" style="display: none;">
-        <iframe id="wiki-frame" src="/wiki-graph" style="width: 100%; height: 800px; border: none; margin: 0; padding: 0;"></iframe>
-    </div>
 </body>
 </html>
