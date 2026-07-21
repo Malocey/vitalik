@@ -1,0 +1,31 @@
+{
+  "SKR03": {
+    "lebensmittel_fleisch_7": {
+      "kontonummer": "3400",
+      "bezeichnung": "Wareneingang 7% USt",
+      "steuersatz": 7.0
+    },
+    "betriebsbedarf_reinigung_19": {
+      "kontonummer": "4900",
+      "bezeichnung": "Sonstiger Betriebsbedarf 19% USt",
+      "steuersatz": 19.0
+    },
+    "porto_telefon_19": {
+      "kontonummer": "4920",
+      "bezeichnung": "Telefon/Internet 19% USt",
+      "steuersatz": 19.0
+    }
+  },
+  "SKR04": {
+    "lebensmittel_fleisch_7": {
+      "kontonummer": "5400",
+      "bezeichnung": "Wareneingang 7% USt",
+      "steuersatz": 7.0
+    },
+    "betriebsbedarf_reinigung_19": {
+      "kontonummer": "6300",
+      "bezeichnung": "Sonstiger Betriebsbedarf 19% USt",
+      "steuersatz": 19.0
+    }
+  }
+}
