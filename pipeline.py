@@ -10,10 +10,14 @@ import logging
 import time
 from pathlib import Path
 from typing import Dict, Any, List
-from src.core.config import CHECKPOINT_FILE, TESTDATA_DIR
+from src.core.config import (
+    CHECKPOINT_FILE, TESTDATA_DIR, LM_STUDIO_ENDPOINTS,
+    LLM_MAX_IN_FLIGHT_PER_ENDPOINT,
+)
 from src.parser.pdf_engine import pdf_engine
 from src.parser.analyzer import document_analyzer
 from src.core.validation_shield import validation_shield
+from src.core.rag_engine import rag_engine
 from src.core.mocks import mock_drive, mock_telegram, mock_sevdesk
 from src.drive.sorter import DriveSorter
 
@@ -40,7 +44,7 @@ class ArchivePipeline:
         with open(self.checkpoint_file, "w", encoding="utf-8") as f:
             json.dump(self.checkpoint, f, ensure_ascii=False, indent=2)
 
-    def process_pdf_archive(self, pdf_path: Path) -> List[Dict[str, Any]]:
+    def process_pdf_archive(self, pdf_path: Path, source_action: str = "archive") -> List[Dict[str, Any]]:
         """
         Verarbeitet eine mehrseitige PDF-Archivdatei stapelweise und parallel.
         Speichert Ergebnisse inkrementell und verschiebt die Quelldatei nach Abschluss.
@@ -57,6 +61,22 @@ class ArchivePipeline:
 
         # Grenzen der einzelnen Belege im Stapel erkennen
         boundaries = document_analyzer.detect_boundaries(pages_info)
+        filtered_boundaries = []
+        for boundary in boundaries:
+            boundary_text = " ".join(
+                page.get("full_text") or ""
+                for page in pages_info
+                if boundary["start_page"] <= page["page_num"] <= boundary["end_page"]
+            )
+            useful_characters = len("".join(character for character in boundary_text if character.isalnum()))
+            if useful_characters < 80:
+                logger.warning(
+                    f"[Pipeline] Leere/zu kurze Trennseiten {boundary['start_page']}-{boundary['end_page']} "
+                    f"übersprungen ({useful_characters} Nutzzeichen)."
+                )
+                continue
+            filtered_boundaries.append(boundary)
+        boundaries = filtered_boundaries
         total_docs = len(boundaries)
         logger.info(f"[Pipeline] Erkannte Belege im Stapel: {total_docs}")
 
@@ -86,6 +106,26 @@ class ArchivePipeline:
                     temp_pdf_path.unlink()
                     
                 if is_md5_dup:
+                    existing_doc = rag_engine.find_beleg_by_md5(md5_hash)
+                    if existing_doc:
+                        # Die Seitenpositionen beziehen sich auf das aktuelle
+                        # Sammel-PDF und müssen beim Resume erneut gesetzt werden.
+                        existing_doc["start_seite"] = start
+                        existing_doc["end_seite"] = end
+                        logger.info(
+                            f"[Pipeline] Bereits persistenter Teilbeleg {existing_doc['beleg_id']} "
+                            f"wird ohne Neuanlage wiederverwendet."
+                        )
+                        res = {
+                            "doc": existing_doc,
+                            "passed": existing_doc.get("status") == "PASSED",
+                            "reason": "Bereits vollständig persistent (MD5)",
+                            "saved_path": existing_doc.get("beleg_link", ""),
+                            "telegram_msg": "[System] Bereits persistenter Teilbeleg wiederverwendet.",
+                        }
+                        with db_lock:
+                            processed_results.append(res)
+                        return res
                     doc_data = {
                         "lieferant": "DUBLITTE_MD5",
                         "datum": datetime.datetime.now().strftime("%Y-%m-%d"),
@@ -116,11 +156,7 @@ class ArchivePipeline:
 
                 # 3. Inhaltliche Analyse des Einzeldokuments (LLM Abfrage)
                 doc_pages = [p for p in pages_info if start <= p["page_num"] <= end]
-                doc_data_list = document_analyzer.analyze_page_stack(doc_pages)
-                if not doc_data_list:
-                    return None
-                
-                doc_data = doc_data_list[0]
+                doc_data = document_analyzer.analyze_document(doc_pages)
                 doc_data["md5_hash"] = md5_hash
 
                 # 4. Validierung
@@ -138,7 +174,11 @@ class ArchivePipeline:
                     saved_path = sort_result["saved_path"]
 
                     # Buchung in sevDesk
-                    if passed and enriched_doc.get("validation_status") != "DUBLITTE_VERDACHT":
+                    if (
+                        sort_result.get("passed") is True
+                        and enriched_doc.get("validation_status") == "PASSED"
+                        and enriched_doc.get("persistence_verified") is True
+                    ):
                         mock_sevdesk.post_voucher(enriched_doc)
 
                     # Telegram Push
@@ -168,7 +208,10 @@ class ArchivePipeline:
                 return res
 
         # Parallel verarbeiten (Gemma 4 entlasten: max 2 Worker)
-        max_llm_workers = min(2, total_docs) if total_docs > 0 else 1
+        configured_capacity = max(
+            1, len(LM_STUDIO_ENDPOINTS) * LLM_MAX_IN_FLIGHT_PER_ENDPOINT
+        )
+        max_llm_workers = min(configured_capacity, total_docs) if total_docs > 0 else 1
         logger.info(f"[Pipeline] Starte parallele KI-Extraktion und SOFORTIGES Speichern mit {max_llm_workers} Workern...")
         
         boundary_list = list(enumerate(boundaries, 1))
@@ -177,19 +220,38 @@ class ArchivePipeline:
             for future in as_completed(futures):
                 future.result()
 
-        # Checkpoint speichern
-        self.checkpoint["processed_files"].append(pdf_path.name)
-        self._save_checkpoint()
-
-        # 6. Quelldatei archivieren ("abheften")
-        try:
-            archive_dir = pdf_path.parent / "archived"
-            archive_dir.mkdir(parents=True, exist_ok=True)
-            archived_path = archive_dir / pdf_path.name
-            shutil.move(str(pdf_path), str(archived_path))
-            logger.info(f"[Pipeline] Quelldatei erfolgreich abgeheftet unter: {archived_path}")
-        except Exception as ae:
-            logger.error(f"[Pipeline] Fehler beim Abheften der Quelldatei: {ae}")
+        fully_persistent = (
+            total_docs > 0
+            and len(processed_results) == total_docs
+            and all(
+                result.get("doc", {}).get("persistence_verified") is True
+                for result in processed_results
+            )
+        )
+        if fully_persistent:
+            self.checkpoint["processed_files"].append(pdf_path.name)
+            self._save_checkpoint()
+            try:
+                if source_action == "done":
+                    done_path = pdf_path.with_name(f"Done_{pdf_path.name}")
+                    if done_path.exists():
+                        raise FileExistsError(f"Done-Zieldatei existiert bereits: {done_path}")
+                    pdf_path.rename(done_path)
+                    logger.info(f"[Pipeline] Quelldatei erfolgreich markiert: {done_path}")
+                elif source_action == "archive":
+                    archive_dir = pdf_path.parent / "archived"
+                    archive_dir.mkdir(parents=True, exist_ok=True)
+                    archived_path = archive_dir / pdf_path.name
+                    shutil.move(str(pdf_path), str(archived_path))
+                    logger.info(f"[Pipeline] Quelldatei erfolgreich abgeheftet unter: {archived_path}")
+                elif source_action != "keep":
+                    raise ValueError(f"Unbekannte source_action: {source_action}")
+            except Exception as ae:
+                logger.error(f"[Pipeline] Fehler beim Markieren der Quelldatei: {ae}")
+        else:
+            logger.error(
+                "[Pipeline] Quelldatei bleibt unverändert: Nicht alle Belege wurden vollständig persistent gespeichert."
+            )
 
         logger.info(f"[Pipeline] Verarbeitung von {pdf_path.name} abgeschlossen.")
         return processed_results

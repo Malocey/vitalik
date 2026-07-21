@@ -18,3 +18,18 @@ build/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Laufzeit- und Belegdaten niemals ins Repository einchecken
+data/*.db
+data/ocr_cache/
+data/raw_sources/
+data/reports/
+data/temp/
+data/testdata/*.pdf
+data/testdata/*.csv
+data/mock_storage/
+data/vectorstore/
+data/checkpoint.json
+data/wiki/beleg_*.md
+data/wiki/entities/
+data/wiki/query_*.md

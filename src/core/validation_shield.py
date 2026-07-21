@@ -35,6 +35,30 @@ class ValidationShield:
         
         Rückgabe: (passed: bool, status_reason: str, enriched_doc_data: dict)
         """
+        if doc_data.get("extraction_status") == "EXTRACTION_FAILED" or doc_data.get("ocr_status") == "OCR_FAILED":
+            reason = "OCR oder Datenextraktion fehlgeschlagen; automatische Verarbeitung gesperrt."
+            doc_data["validation_status"] = "EXTRACTION_FAILED"
+            doc_data["validation_reason"] = reason
+            return False, reason, doc_data
+
+        if float(doc_data.get("ocr_quality_score", 1.0) or 0.0) < 0.70:
+            reason = "OCR-Qualität unter 70 %; manuelle Prüfung erforderlich."
+            doc_data["validation_status"] = "MANUAL_REVIEW_NEEDED"
+            doc_data["validation_reason"] = reason
+            return False, reason, doc_data
+
+        if doc_data.get("belegtyp") in {"Kontoauszug", "Bankdokument", "Lieferschein", "Angebot"}:
+            reason = f"Dokumenttyp {doc_data.get('belegtyp')} ist nicht automatisch buchbar."
+            doc_data["validation_status"] = "CLASSIFIED_NON_BOOKABLE"
+            doc_data["validation_reason"] = reason
+            return False, reason, doc_data
+
+        if doc_data.get("amounts_estimated"):
+            reason = "Netto und Steuer wurden nur geschätzt; manuelle Prüfung erforderlich."
+            doc_data["validation_status"] = "MANUAL_REVIEW_NEEDED"
+            doc_data["validation_reason"] = reason
+            return False, reason, doc_data
+
         netto = float(doc_data.get("netto", 0.0))
         steuer = float(doc_data.get("steuer", 0.0))
         brutto = float(doc_data.get("brutto", 0.0))
@@ -57,7 +81,14 @@ class ValidationShield:
 
         # Stufe 3: Steuer-Mapping (SKR03 / SKR04)
         warengruppe = doc_data.get("warengruppe", "").lower()
-        if "fleisch" in warengruppe or "lebensmittel" in warengruppe or steuer == 7.0:
+        matched_tax_rate = doc_data.get("steuersatz_prozent")
+        trusted_article_match = doc_data.get("steuer_match_source") == "sevdesk_articles"
+        is_reduced_tax = (
+            (trusted_article_match and matched_tax_rate == 7.0)
+            or "fleisch" in warengruppe
+            or "lebensmittel" in warengruppe
+        )
+        if is_reduced_tax:
             doc_data["skr03_konto"] = self.skr_mapping.get("SKR03", {}).get("lebensmittel_fleisch_7", {}).get("kontonummer", "3400")
             doc_data["skr04_konto"] = self.skr_mapping.get("SKR04", {}).get("lebensmittel_fleisch_7", {}).get("kontonummer", "5400")
             doc_data["steuersatz_prozent"] = 7.0

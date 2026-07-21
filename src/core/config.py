@@ -28,6 +28,20 @@ for d in [DATA_DIR, TESTDATA_DIR, WIKI_DIR, VECTORSTORE_DIR, MOCK_STORAGE_DIR, M
 LOCAL_LLM_PROVIDER = os.getenv("LOCAL_LLM_PROVIDER", "lm_studio")  # 'ollama' oder 'lm_studio'
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 LM_STUDIO_BASE_URL = os.getenv("LM_STUDIO_BASE_URL", "http://localhost:1234/v1")
+LM_STUDIO_ENDPOINTS = [
+    endpoint.strip()
+    for endpoint in os.getenv("LM_STUDIO_ENDPOINTS", LM_STUDIO_BASE_URL).split(",")
+    if endpoint.strip()
+]
+LM_STUDIO_API_TOKENS = [
+    token.strip() for token in os.getenv("LM_STUDIO_API_TOKENS", "").split(",")
+]
+LM_STUDIO_MODELS = [
+    model.strip() for model in os.getenv("LM_STUDIO_MODELS", "").split(",")
+]
+LLM_MAX_IN_FLIGHT_PER_ENDPOINT = max(1, int(os.getenv("LLM_MAX_IN_FLIGHT_PER_ENDPOINT", "1")))
+LLM_REQUEST_TIMEOUT = float(os.getenv("LLM_REQUEST_TIMEOUT", "120"))
+LLM_FAILURE_COOLDOWN = float(os.getenv("LLM_FAILURE_COOLDOWN", "30"))
 
 # Modellnamen (konfigurierbar)
 DEFAULT_LLM_MODEL = os.getenv("DEFAULT_LLM_MODEL", "supergemma-4-12b-abliterated")
