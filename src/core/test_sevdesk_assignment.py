@@ -9,11 +9,29 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.core.rag_engine import rag_engine
+from src.core.sevdesk_importer import _create_schema
 from src.core.validation_shield import validation_shield
 from src.parser.analyzer import document_analyzer
 
 
-def test_sevdesk_assignment() -> None:
+def test_sevdesk_assignment(tmp_path, monkeypatch) -> None:
+    test_db = tmp_path / "rag_index.db"
+    monkeypatch.setattr(rag_engine, "db_path", test_db)
+    with sqlite3.connect(test_db) as db:
+        _create_schema(db)
+        db.execute("""
+            INSERT INTO sevdesk_contacts (
+                kunden_nr, organisation, kategorie, kreditoren_nr,
+                zahlungsziel_tage, skonto_tage, skonto_prozent
+            ) VALUES ('L-100', 'Test Feinkost GmbH', 'Lieferant', '70001', 14, 7, 2.0)
+        """)
+        db.execute("""
+            INSERT INTO sevdesk_articles (
+                artikelnummer, name, einheit, umsatzsteuer, einkaufspreis, kategorie
+            ) VALUES ('A-700', 'Test Olivenöl Extra', 'Flasche', 7.0, 100.0, 'Lebensmittel')
+        """)
+        db.commit()
+
     with sqlite3.connect(rag_engine.db_path) as db:
         supplier = db.execute("""
             SELECT kunden_nr, COALESCE(NULLIF(organisation, ''), trim(vorname || ' ' || nachname))
