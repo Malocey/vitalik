@@ -1,0 +1,29 @@
+--- SEITE 1 ---
+Musterhandel Nord GmbH
+Teststraße 12
+12345 Musterstadt
+
+RECHNUNG
+Rechnungsnummer: MH-2026-0042
+Rechnungsdatum: 22.07.2026
+Kundennummer: TEST-1001
+Währung: EUR
+
+Pos.  Beschreibung                    Netto       USt
+1     Muster-Lebensmittel 7 %         100,00 EUR   7 %
+2     Muster-Verpackung 19 %           50,00 EUR  19 %
+
+Zwischensumme netto                   150,00 EUR
+Umsatzsteuer 7 %                        7,00 EUR
+Umsatzsteuer 19 %                       9,50 EUR
+Umsatzsteuer gesamt                     16,50 EUR
+Gesamtbetrag                          166,50 EUR
+
+Zahlbar ohne Abzug bis 05.08.2026.
+
+--- SEITE 2 ---
+Fortsetzung zur Rechnung MH-2026-0042
+Seite 2 von 2
+
+Dies ist ein vollständig synthetisches Testdokument.
+Es enthält keine echten Personen-, Unternehmens- oder Bankdaten.

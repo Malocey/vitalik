@@ -1,0 +1,35 @@
+{
+  "fixture_id": "synthetic_invoice_001",
+  "synthetic": true,
+  "pages": 2,
+  "boundaries": [
+    {
+      "start_page": 1,
+      "end_page": 2
+    }
+  ],
+  "document_type": "Rechnung",
+  "supplier": "Musterhandel Nord GmbH",
+  "invoice_number": "MH-2026-0042",
+  "invoice_date": "2026-07-22",
+  "currency": "EUR",
+  "net": 150.0,
+  "tax": 16.5,
+  "gross": 166.5,
+  "tax_breakdown": [
+    {
+      "tax_rate": 7.0,
+      "net": 100.0,
+      "tax": 7.0,
+      "gross": 107.0
+    },
+    {
+      "tax_rate": 19.0,
+      "net": 50.0,
+      "tax": 9.5,
+      "gross": 59.5
+    }
+  ],
+  "expected_fast_lane_route": "FAST_LANE",
+  "llm_required": false
+}
