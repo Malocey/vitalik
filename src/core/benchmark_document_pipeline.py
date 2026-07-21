@@ -7,6 +7,11 @@ import os
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+import sys
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.core.benchmark_evaluator import BenchmarkEvaluator, BenchmarkResult
 
@@ -70,6 +75,8 @@ def generate_empty_report(output_dir: Path):
     summary = {
         "status": "success",
         "message": "No PDFs found.",
+        "total_pdfs": 0,
+        "total_documents_extracted": 0,
         "metrics": {
             "exact_boundary_precision": "not_available",
             "exact_boundary_recall": "not_available",
@@ -135,11 +142,18 @@ def calculate_metrics(results: List[BenchmarkResult], expected: List[Dict[str, A
         for doc in res.extracted_docs:
             if doc.get("error") or doc.get("confidence_score", 1.0) < 0.8:
                 manual_checks += 1
-            total_llm_calls += doc.get("llm_calls", 0)
+            calls = doc.get("llm_calls")
+            if isinstance(calls, int):
+                total_llm_calls += calls
 
     if total_docs_extracted > 0:
         metrics["manual_check_share"] = manual_checks / total_docs_extracted
-        metrics["llm_calls_per_document"] = total_llm_calls / total_docs_extracted
+        known_llm_docs = sum(
+            1 for result in results for doc in result.extracted_docs
+            if isinstance(doc.get("llm_calls"), int)
+        )
+        if known_llm_docs == total_docs_extracted:
+            metrics["llm_calls_per_document"] = total_llm_calls / total_docs_extracted
 
     if not expected:
         return metrics

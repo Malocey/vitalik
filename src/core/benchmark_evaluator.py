@@ -2,12 +2,14 @@ import logging
 import time
 import re
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Callable, Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 
 from src.parser.pdf_engine import pdf_engine
 from src.parser.analyzer import document_analyzer
 from src.core.rag_engine import rag_engine
+from src.parser.amount_parser import parse as parse_amounts
+from src.parser.document_type_classifier import DocumentTypeClassifier
 
 logger = logging.getLogger("BenchmarkEvaluator")
 
@@ -25,11 +27,17 @@ class BenchmarkResult:
 
 
 class BenchmarkEvaluator:
-    def __init__(self, mode: str):
+    def __init__(
+        self,
+        mode: str,
+        fixture_extractor: Optional[Callable[[List[Dict[str, Any]]], Dict[str, Any]]] = None,
+    ):
         self.mode = mode
         self.pdf_engine = pdf_engine
         self.document_analyzer = document_analyzer
         self.rag_engine = rag_engine
+        self.type_classifier = DocumentTypeClassifier()
+        self.fixture_extractor = fixture_extractor
 
     def check_cache(self, pdf_path: Path) -> Tuple[int, int]:
         """Checks cache hits and misses before run."""
@@ -135,7 +143,7 @@ class BenchmarkEvaluator:
                 "raw_text": combined_text,
                 "ocr_character_count": total_ocr_chars,
                 "ocr_quality_score": ocr_quality_score,
-                "llm_calls": 0,
+                "llm_calls": 0 if self.mode == "structural" else None,
                 "error": None
             }
 
@@ -148,21 +156,27 @@ class BenchmarkEvaluator:
                     regex_data = self.document_analyzer.try_regex_extraction(combined_text)
                     if regex_data:
                         doc_data.update(regex_data)
-                    else:
-                        doc_data.update(self.document_analyzer._get_fallback_doc())
-                        doc_data["error"] = "REGEX_FAILED"
+                type_result = self.type_classifier.classify(
+                    combined_text, pages=len(doc_pages), ocr_quality=ocr_quality_score
+                )
+                amount_result = parse_amounts(doc_pages)
+                doc_data["document_type_evidence"] = type_result
+                doc_data["amount_evidence"] = amount_result
+                if type_result.get("status") == "CLASSIFIED":
+                    doc_data["belegtyp"] = type_result.get("document_type")
+                if amount_result.get("math_valid") and not amount_result.get("conflicts"):
+                    for source, target in (("net", "netto"), ("tax", "steuer"), ("gross", "brutto")):
+                        candidate = amount_result.get(source)
+                        if candidate:
+                            doc_data[target] = candidate.get("value")
+                required = ("lieferant", "belegtyp", "netto", "steuer", "brutto")
+                if any(doc_data.get(field) in (None, "", "UNKNOWN") for field in required):
+                    doc_data["error"] = "STRUCTURAL_INCOMPLETE"
 
             elif self.mode == "live":
                 try:
                     res = self.document_analyzer.analyze_document(doc_pages)
                     doc_data.update(res)
-                    # We assume in live mode analyze_document could trigger 1 LLM call when regex/protected fails
-                    # We can't know precisely without instrumenting, but if amounts_estimated is False or it passed regex, maybe 0.
-                    # As a proxy, if it uses fallback/llm fields or isn't amounts_estimated from regex...
-                    # Without modifying analyzer, we assume 1 LLM call if the document passed through the analyzer completely.
-                    if res.get("confidence_score", 1.0) < 1.0 or res.get("amounts_estimated"):
-                         doc_data["llm_calls"] = 1 # Approximation
-
                     # Try extracting worker ID if available in future, but currently:
                     llm_worker = "not_available"
                 except Exception as e:
@@ -172,7 +186,12 @@ class BenchmarkEvaluator:
                     else:
                         doc_data["error"] = "ANALYSIS_ERROR"
             elif self.mode == "fixture":
-                doc_data.update({"belegtyp": "FIXTURE", "netto": 10.0, "steuer": 1.9, "brutto": 11.9, "lieferant": "Test", "datum": "2024-01-01", "rechnungsnummer": "FIXTURE-1"})
+                if self.fixture_extractor is None:
+                    doc_data["error"] = "FIXTURE_NOT_CONFIGURED"
+                else:
+                    doc_data.update(self.fixture_extractor(doc_pages))
+                    doc_data["synthetic_fixture"] = True
+                    doc_data["llm_calls"] = 0
 
             analysis_time = time.time() - analysis_start
             runtime_analysis += analysis_time

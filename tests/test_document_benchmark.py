@@ -3,6 +3,7 @@ import os
 import csv
 import json
 import tempfile
+import sys
 from pathlib import Path
 from src.core.benchmark_document_pipeline import load_expected_csv, calculate_metrics
 from src.core.benchmark_evaluator import BenchmarkResult, BenchmarkEvaluator
@@ -93,7 +94,14 @@ def test_no_data_mutation_and_fixture_mode():
     # and it does not write to rag_index.db or anything globally unless told to.
 
     # We create a dummy test environment.
-    evaluator = BenchmarkEvaluator(mode="fixture")
+    evaluator = BenchmarkEvaluator(
+        mode="fixture",
+        fixture_extractor=lambda pages: {
+            "belegtyp": "FIXTURE", "netto": 10.0, "steuer": 1.9,
+            "brutto": 11.9, "lieferant": "Test", "datum": "2024-01-01",
+            "rechnungsnummer": "FIXTURE-1",
+        },
+    )
 
     # Check states before
     paths_to_check = {
@@ -123,6 +131,7 @@ def test_no_data_mutation_and_fixture_mode():
 
     evaluator.pdf_engine = MockPDFEngine()
     evaluator.document_analyzer = MockAnalyzer()
+    evaluator.rag_engine = type("ReadOnlyEmptyRAG", (), {"search": lambda *args, **kwargs: []})()
 
     # create a dummy pdf just so Path.name doesn't fail
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
@@ -147,7 +156,7 @@ def test_no_data_mutation_and_fixture_mode():
 def test_missing_pdf_directory():
     import subprocess
     with tempfile.TemporaryDirectory() as tmpdir:
-        result = subprocess.run(["python", "src/core/benchmark_document_pipeline.py", "invalid_dir", "--output", tmpdir], capture_output=True, text=True)
+        result = subprocess.run([sys.executable, "src/core/benchmark_document_pipeline.py", "invalid_dir", "--output", tmpdir], capture_output=True, text=True)
         assert result.returncode == 0
         assert "benchmark_summary.json" in os.listdir(tmpdir)
         with open(os.path.join(tmpdir, "benchmark_summary.json"), "r") as f:
