@@ -17,15 +17,14 @@ from src.parser.pdf_engine import pdf_engine
 
 def test_boundaries_and_presegmented_analysis() -> None:
     pages = [
-        {"page_num": 1, "full_text": "Rechnung A Seite 1 von 2"},
-        {"page_num": 2, "full_text": "Positionen Seite 2 von 2"},
-        {"page_num": 3, "full_text": "Rechnung B Seite 1 von 1"},
-        {"page_num": 4, "full_text": "Einzelbeleg ohne lesbaren Kopf"},
+        {"page_num": 1, "full_text": "Rechnung A mit Rechnungsnummer RA-1 Seite 1 von 2"},
+        {"page_num": 2, "full_text": "Fortgesetzte Rechnungspositionen Seite 2 von 2"},
+        {"page_num": 3, "full_text": "Rechnung B mit Rechnungsnummer RB-2 Seite 1 von 1"},
+        {"page_num": 4, "full_text": "Einzelbeleg mit ausreichend lesbarem Dokumentenkopf"},
     ]
-    assert DocumentAnalyzer().detect_boundaries(pages) == [
-        {"start_page": 1, "end_page": 2},
-        {"start_page": 3, "end_page": 3},
-        {"start_page": 4, "end_page": 4},
+    boundaries = DocumentAnalyzer().detect_boundaries(pages)
+    assert [(item["start_page"], item["end_page"]) for item in boundaries] == [
+        (1, 2), (3, 3), (4, 4)
     ]
 
 

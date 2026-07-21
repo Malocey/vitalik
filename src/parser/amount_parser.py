@@ -109,7 +109,7 @@ def _parse_amount_string(s: str) -> Tuple[Optional[float], List[Dict[str, Any]]]
     except ValueError:
         return None, normalizations
 
-def _extract_currency(text: str, default_currency: str, document_text: str) -> Tuple[str, bool]:
+def _extract_currency(text: str, default_currency: str, document_text: str) -> Tuple[Optional[str], bool]:
     if re.search(r'\bEUR\b|€', text, re.IGNORECASE):
         return "EUR", False
     if re.search(r'\bUSD\b|\$', text, re.IGNORECASE):
@@ -125,8 +125,8 @@ def _extract_currency(text: str, default_currency: str, document_text: str) -> T
     if len(currencies_found) == 1:
         return currencies_found.pop(), True
 
-    if "EUR" in currencies_found and default_currency == "EUR":
-        return "EUR", True
+    if len(currencies_found) > 1:
+        return None, True
 
     return default_currency, True
 
@@ -150,9 +150,15 @@ def _find_best_match(candidates: List[AmountCandidate]) -> Tuple[Dict[str, Any],
     # and tax_rate roughly matches.
     # Allowing rounding error up to 0.02
 
-    nets = [c for c in candidates if c.field_type == "net" or c.field_type is None]
-    taxes = [c for c in candidates if c.field_type == "tax" or c.field_type is None]
-    grosses = [c for c in candidates if c.field_type == "gross" or c.field_type is None]
+    # Bevorzuge beschriftete Summen. Alle unbeschrifteten Positionswerte in
+    # kartesische Produkte aufzunehmen wäre bei langen Rechnungen exponentiell.
+    explicit_nets = [c for c in candidates if c.field_type == "net"]
+    explicit_taxes = [c for c in candidates if c.field_type == "tax"]
+    explicit_grosses = [c for c in candidates if c.field_type == "gross"]
+    unlabeled = [c for c in candidates if c.field_type is None]
+    nets = (explicit_nets or unlabeled)[:20]
+    taxes = (explicit_taxes or unlabeled)[:20]
+    grosses = (explicit_grosses or unlabeled)[:20]
 
     valid_combos = []
 
@@ -200,12 +206,14 @@ def _find_best_match(candidates: List[AmountCandidate]) -> Tuple[Dict[str, Any],
 
     # Support multiple taxes mapping to same gross
     import itertools
+    multi_nets = explicit_nets[:8]
+    multi_taxes = explicit_taxes[:8]
     for g in grosses:
         for num_pairs in range(1, 4):  # Check up to 3 net/tax pairs
-            for combo_nets in itertools.combinations(nets, num_pairs):
+            for combo_nets in itertools.combinations(multi_nets, num_pairs):
                 if g in combo_nets: continue
                 # find matching taxes for these nets
-                for combo_taxes in itertools.product(taxes, repeat=num_pairs):
+                for combo_taxes in itertools.permutations(multi_taxes, num_pairs):
                     if g in combo_taxes: continue
                     # ensure unique items
                     if len(set(combo_taxes)) != num_pairs: continue
