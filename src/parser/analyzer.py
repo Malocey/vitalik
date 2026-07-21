@@ -14,6 +14,7 @@ from src.core.persona_style import persona_engine
 from src.parser.amount_parser import parse as parse_amounts
 from src.parser.boundary_detector_v2 import BoundaryDetectorV2
 from src.parser.document_type_classifier import DocumentTypeClassifier
+from src.core.fast_lane import FastLaneRouter
 
 logger = logging.getLogger("Analyzer")
 
@@ -23,6 +24,7 @@ class DocumentAnalyzer:
         self.llm_client = llm_client
         self.boundary_detector = BoundaryDetectorV2()
         self.type_classifier = DocumentTypeClassifier()
+        self.fast_lane_router = FastLaneRouter()
 
     def detect_boundaries(self, pages_info: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
@@ -415,15 +417,57 @@ class DocumentAnalyzer:
             amount_result = parse_amounts(doc_pages)
             protected_type = self.detect_high_priority_document_type(combined_text)
             regex_data = None if protected_type else self.try_regex_extraction(combined_text)
+
+            # Fast Lane Router Evaluierung
+            supplier_val = regex_data.get("lieferant") if regex_data else None
+            if not supplier_val and sevdesk_assignment.get("supplier"):
+                sup_info = sevdesk_assignment.get("supplier")
+                supplier_val = sup_info.get("name") if isinstance(sup_info, dict) else str(sup_info)
+
+            inv_num_val = regex_data.get("rechnungsnummer") if regex_data else None
+            if inv_num_val == "REG-EXPR":
+                inv_num_val = None
+
+            router_data = {
+                "input_valid": not ocr_failed,
+                "context_character_count": len(combined_text),
+                "pages": doc_pages,
+                "ocr_quality_score": min(ocr_scores) if ocr_scores else 1.0,
+                "boundary_confidence": bound.get("boundary_confidence", 1.0) or 1.0,
+                "document_type_result": type_result,
+                "amount_result": amount_result,
+                "supplier_result": {
+                    "value": supplier_val,
+                    "confidence": 1.0 if supplier_val else 0.0,
+                    "conflicts": False
+                },
+                "invoice_number_result": {
+                    "value": inv_num_val,
+                    "confidence": 1.0 if inv_num_val else 0.0,
+                    "conflicts": False
+                }
+            }
+            fast_lane_eval = self.fast_lane_router.route(router_data)
+            route = fast_lane_eval.get("route", "FULL_LLM")
+
             if protected_type:
                 logger.info(f"[Analyzer] Geschützter Dokumenttyp Kontoauszug auf Seiten {start}-{end} erkannt.")
                 doc_data = protected_type
-            elif regex_data:
-                logger.info(f"[Analyzer] Regex-Extraktion erfolgreich für Seiten {start}-{end}")
+                doc_data["fast_lane_route"] = "MANUAL_REVIEW"
+                doc_data["fast_lane_saved_llm"] = False
+            elif route == "FAST_LANE" and regex_data:
+                logger.info(f"[Analyzer] [FastLane] FAST_LANE Route gewählt für Seiten {start}-{end}. LLM-Aufruf übersprungen!")
                 doc_data = regex_data
+                doc_data["fast_lane_route"] = "FAST_LANE"
+                doc_data["fast_lane_saved_llm"] = True
+            elif regex_data and route in ["FAST_LANE", "TARGETED_LLM"]:
+                logger.info(f"[Analyzer] Regex-Extraktion erfolgreich für Seiten {start}-{end} (Route: {route})")
+                doc_data = regex_data
+                doc_data["fast_lane_route"] = route
+                doc_data["fast_lane_saved_llm"] = (route == "FAST_LANE")
             else:
                 # 2. KI-Fallback (LM-Manager Routing)
-                logger.info(f"[Analyzer] Regex-Extraktion unvollständig für Seiten {start}-{end}. Starte KI-Fallback...")
+                logger.info(f"[Analyzer] [FastLane] Route {route} gewählt für Seiten {start}-{end}. Starte KI-Fallback...")
 
                 # RAG Suche nach bekannten Lieferanten und Kontenregeln
                 rag_context = "\n".join([f"- {h['content']}" for h in rag_hits]) if rag_hits else "Keine spezifischen RAG-Muster."
@@ -594,8 +638,13 @@ Du musst versuchen, die Felder so genau wie möglich auszulesen. Falls ein Wert 
             res = self._get_fallback_doc()
 
         # default values
-        if "belegtyp" not in res:
-            res["belegtyp"] = "Sonstiges"
+        if "belegtyp" not in res or res.get("belegtyp") in ["Sonstiges", None, ""]:
+            if res.get("rechnungsnummer") and res.get("rechnungsnummer") != "UNBEKANNT":
+                res["belegtyp"] = "Rechnung"
+            elif res.get("brutto", 0.0) > 0.0:
+                res["belegtyp"] = "Rechnung"
+            else:
+                res["belegtyp"] = "Sonstiges"
         return res
 
     def _get_fallback_doc(self) -> Dict[str, Any]:

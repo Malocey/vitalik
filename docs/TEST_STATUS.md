@@ -1,17 +1,17 @@
 # Teststatus und Sicherheitsanalyse
 
-Stand: 22. Juli 2026, Integrationsbranch `integration/fast-lane-resumable-jobs`
+Stand: 22. Juli 2026, Integrationsbranch `main`
 
 ## Reproduzierbarer Lauf
 
 ```bash
-python3 -m pytest -q
+python -m pytest
 ```
 
-Ergebnis auf macOS mit Python 3.9.6:
+Ergebnis auf Windows mit Python 3.13.5:
 
 ```text
-112 passed, 4 warnings in 3.21s
+116 passed in 5.11s
 ```
 
 Die vier Warnungen stammen von `urllib3`/LibreSSL und Hinweisen externer

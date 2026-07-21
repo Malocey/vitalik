@@ -191,7 +191,10 @@ def test_parallel_access():
         assert claimed[0]['locked_by'] is not None
     finally:
         if os.path.exists(db_path):
-            os.remove(db_path)
+            try:
+                os.remove(db_path)
+            except OSError:
+                pass
 
 
 def test_expired_owner_cannot_renew_transition_or_commit():

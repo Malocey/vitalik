@@ -265,6 +265,12 @@ class JobRepository:
             "remaining": remaining
         }
 
+    def list_jobs(self, limit: int = 100) -> List[Dict[str, Any]]:
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM document_jobs ORDER BY created_at DESC LIMIT ?", (limit,))
+        return [dict(row) for row in cursor.fetchall()]
+
     def clear_database(self):
         """Only for testing."""
         conn = self._get_connection()

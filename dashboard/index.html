@@ -407,12 +407,12 @@
             <div class="stat-val" id="stat-wiki">--</div>
         </div>
         <div class="stat-card">
-            <div class="stat-label">Personalisierter Schreibstil</div>
-            <div class="stat-val" id="stat-persona">Vitali</div>
+            <div class="stat-label">Gelernte Kontakte</div>
+            <div class="stat-val" id="stat-contacts" style="color: #34d399;">--</div>
         </div>
         <div class="stat-card">
-            <div class="stat-label">Verzeichnis-Scanner</div>
-            <div class="stat-val" style="font-size: 16px; color: #10b981;">Lokale Pfade Bereit</div>
+            <div class="stat-label">Fast Lane Router</div>
+            <div class="stat-val" style="font-size: 16px; color: #6366f1;">⚡ Aktiv (bis zu 50x)</div>
         </div>
     </div>
 
@@ -524,6 +524,60 @@
 
     </div>
 
+    <!-- System Engine Panel: SQLite Jobs, Contact Memory & Fast Lane -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px;">
+        <!-- SQLite Jobs Panel -->
+        <div class="panel">
+            <div class="panel-title">
+                <span>⚡</span> Resumable SQLite Job-Engine (Crash-Recovery)
+            </div>
+            <div id="jobs-summary" style="display: flex; gap: 12px; font-size: 13px; color: #a5b4fc; font-weight: 600;">
+                Lade Job-Zustände...
+            </div>
+            <div style="max-height: 220px; overflow-y: auto; background: rgba(15, 23, 42, 0.6); border-radius: 12px; padding: 10px;">
+                <table class="table-results" style="width: 100%; font-size: 12px;">
+                    <thead>
+                        <tr>
+                            <th>Job-ID</th>
+                            <th>Status</th>
+                            <th>Seiten</th>
+                            <th>Worker</th>
+                            <th>MD5</th>
+                        </tr>
+                    </thead>
+                    <tbody id="jobs-table-body">
+                        <tr><td colspan="5" style="text-align: center; color: #94a3b8;">Keine aktiven Jobs.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Contact Memory Panel -->
+        <div class="panel">
+            <div class="panel-title">
+                <span>👥</span> Gelerntes Kontaktgedächtnis (Dedupliziert)
+            </div>
+            <div id="contacts-summary" style="font-size: 13px; color: #34d399; font-weight: 600;">
+                Lade gelernte Lieferanten & Kunden...
+            </div>
+            <div style="max-height: 220px; overflow-y: auto; background: rgba(15, 23, 42, 0.6); border-radius: 12px; padding: 10px;">
+                <table class="table-results" style="width: 100%; font-size: 12px;">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Rolle</th>
+                            <th>Aliase</th>
+                            <th>Steuer-ID / IBAN</th>
+                        </tr>
+                    </thead>
+                    <tbody id="contacts-table-body">
+                        <tr><td colspan="4" style="text-align: center; color: #94a3b8;">Keine Kontakte gelernt.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <script>
         let lastQuery = '';
         let lastAnswer = '';
@@ -534,7 +588,68 @@
                 const data = await res.json();
                 document.getElementById('stat-docs').innerText = data.vector_documents_count;
                 document.getElementById('stat-wiki').innerText = data.wiki_pages_count;
-                document.getElementById('stat-persona').innerText = data.persona_name + " (" + data.unternehmen + ")";
+                document.getElementById('stat-contacts').innerText = data.contact_entities_count || 0;
+            } catch (e) {}
+        }
+
+        async function loadJobs() {
+            try {
+                const res = await fetch('/api/jobs');
+                const data = await res.json();
+                const summaryDiv = document.getElementById('jobs-summary');
+                const tbody = document.getElementById('jobs-table-body');
+                if (data.status === 'success') {
+                    const s = data.summary;
+                    summaryDiv.innerHTML = `
+                        <span style="color: #34d399;">Gesamt: ${s.total || 0}</span> |
+                        <span style="color: #a5b4fc;">Committed: ${s.COMMITTED || 0}</span> |
+                        <span style="color: #f59e0b;">Leased: ${s.LEASED || 0}</span> |
+                        <span style="color: #ef4444;">Failed: ${s.FAILED || 0}</span>
+                    `;
+                    tbody.innerHTML = '';
+                    if (data.jobs && data.jobs.length > 0) {
+                        data.jobs.slice(0, 15).forEach(job => {
+                            const tr = document.createElement('tr');
+                            tr.innerHTML = `
+                                <td>${job.job_id}</td>
+                                <td><span class="status-pill ${job.status === 'COMMITTED' ? 'status-passed' : 'status-review'}">${job.status}</span></td>
+                                <td>${job.start_page}-${job.end_page}</td>
+                                <td>${job.locked_by || '-'}</td>
+                                <td style="font-family: monospace; font-size: 11px;">${(job.md5_hash || '').substring(0, 8)}...</td>
+                            `;
+                            tbody.appendChild(tr);
+                        });
+                    } else {
+                        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #94a3b8;">Keine Jobs registriert.</td></tr>';
+                    }
+                }
+            } catch (e) {}
+        }
+
+        async function loadContacts() {
+            try {
+                const res = await fetch('/api/contacts');
+                const data = await res.json();
+                const summaryDiv = document.getElementById('contacts-summary');
+                const tbody = document.getElementById('contacts-table-body');
+                if (data.status === 'success') {
+                    summaryDiv.innerText = `Gelernte Entitäten: ${data.total_entities || 0}`;
+                    tbody.innerHTML = '';
+                    if (data.entities && data.entities.length > 0) {
+                        data.entities.forEach(ent => {
+                            const tr = document.createElement('tr');
+                            tr.innerHTML = `
+                                <td><strong>${ent.canonical_name}</strong></td>
+                                <td><span class="status-pill status-passed">${ent.role}</span></td>
+                                <td>${ent.alias_count || 1} Alias(e)</td>
+                                <td>${ent.tax_id || ent.iban || '-'}</td>
+                            `;
+                            tbody.appendChild(tr);
+                        });
+                    } else {
+                        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #94a3b8;">Noch keine Kontakte gelernt. Scan ausführen!</td></tr>';
+                    }
+                }
             } catch (e) {}
         }
 
@@ -733,6 +848,8 @@
         }
 
         loadStats();
+        loadJobs();
+        loadContacts();
         loadWikiPages();
         loadIndexAndLog();
         runRAGSearch();

@@ -5,7 +5,7 @@ import re
 import sqlite3
 import unicodedata
 from pathlib import Path
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, Optional, Set, List
 
 from src.core.config import DATA_DIR
 
@@ -275,6 +275,18 @@ class ContactMemory:
             "confidence": selected["confidence"],
             "source": "contact_memory",
         }
+
+
+    def get_all_entities(self) -> List[Dict[str, Any]]:
+        with self._connect() as db:
+            rows = db.execute("""
+                SELECT e.*, COUNT(a.normalized_alias) as alias_count
+                FROM contact_entities e
+                LEFT JOIN contact_aliases a ON e.entity_id = a.entity_id
+                GROUP BY e.entity_id
+                ORDER BY e.canonical_name ASC
+            """).fetchall()
+            return [dict(row) for row in rows]
 
 
 contact_memory = ContactMemory()

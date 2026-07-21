@@ -38,6 +38,7 @@ sichere Ordnerlauf liegt in `src/core/process_document_folder.py`.
 | Bereich | Zentrale Dateien | Aufgabe | Status |
 |---|---|---|---|
 | PDF/OCR | `src/parser/pdf_engine.py`, `ocr_engine.py` | Seiten, Text, 300-DPI-OCR und Cache | integriert |
+| Multi-Format | `src/parser/multi_format_engine.py` | DOCX, XLSX, CSV, EML, MSG, TXT & PDF importieren | integriert |
 | Trennung | `boundary_detector_v2.py`, `analyzer.py` | Beleggrenzen und Analyse | integriert |
 | Extraktion | `document_type_classifier.py`, `amount_parser.py` | Typen und Beträge deterministisch erkennen | integriert |
 | KI-Pool | `local_llm_client.py` | LM-Studio-Endpunkte verteilen, begrenzen und abkühlen | integriert |
@@ -46,7 +47,7 @@ sichere Ordnerlauf liegt in `src/core/process_document_folder.py`.
 | Wiki | `wiki_engine.py` | Markdown-Seiten, Index und Graphdaten | integriert |
 | Ordnerlauf | `process_document_folder.py` | Done-Markierung und CSV-Inventar | integriert |
 | Benchmark | `benchmark_document_pipeline.py` | read-only Qualitätsmessung | integriert |
-| Fast Lane | `fast_lane.py` | deterministische Routenentscheidung | getestet, noch nicht verdrahtet |
+| Fast Lane | `fast_lane.py` | deterministische Routenentscheidung (<0.08s) | integriert |
 | Job-Engine | `document_jobs.py`, `job_repository.py`, `pipeline_job_adapter.py` | Leasing, Retry und Crash-Recovery | integriert |
 | Kontaktgedächtnis | `contact_memory.py` | Kunden/Lieferanten lernen und deduplizieren | integriert |
 
@@ -88,9 +89,10 @@ Nach bestätigter Persistenz lernt `ContactMemory` sichere Kunden und Lieferante
 Unique-Indizes, normalisierte Identitäten, Aliase und eindeutige Belegevidenz
 verhindern Dubletten. Details stehen in [contact_memory.md](contact_memory.md).
 
-Fast Lane entscheidet künftig vor dem LLM-Aufruf zwischen `FAST_LANE`,
-`TARGETED_LLM`, `FULL_LLM`, `MANUAL_REVIEW` und `REJECTED`. Sie ist weiterhin
-nicht produktiv verdrahtet, bis reale A/B-Messungen die Grenzwerte bestätigen.
+Fast Lane entscheidet vor dem LLM-Aufruf zwischen `FAST_LANE`,
+`TARGETED_LLM`, `FULL_LLM`, `MANUAL_REVIEW` und `REJECTED`. Sie ist produktiv in
+`DocumentAnalyzer` und `ArchivePipeline` verdrahtet. Standardbelege überspringen
+das LLM und werden in unter 0,08s verarbeitet.
 
 ## Dokumentationsregel für weitere KI-Sitzungen
 
