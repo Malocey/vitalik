@@ -27,6 +27,7 @@ from src.core.config import MOCK_DRIVE_DIR
 from src.parser.pdf_engine import pdf_engine
 from src.drive.matrix_setup import GERMAN_MONTHS, authenticate_google_apis, find_or_create_folder
 from src.core.rag_engine import rag_engine
+from src.wiki.wiki_engine import wiki_engine
 
 logger = logging.getLogger("DriveSorter")
 
@@ -71,6 +72,8 @@ def determine_destination_folder(doc_data: Dict[str, Any]) -> str:
             "Lieferschein": "Lieferscheine",
             "Auftragsbestaetigung": "Auftragsbestaetigungen",
             "Mahnung": "Mahnungen",
+            "Kontoauszug": "Kontoauszuege",
+            "Bankdokument": "Bankdokumente",
             "Sonstiges": "Sonstiges"
         }
         beleg_subfolder = belegtyp_folder_map.get(belegtyp, "Sonstiges")
@@ -108,6 +111,8 @@ def determine_destination_folder(doc_data: Dict[str, Any]) -> str:
         "Lieferschein": "Lieferscheine",
         "Auftragsbestaetigung": "Auftragsbestaetigungen",
         "Mahnung": "Mahnungen",
+        "Kontoauszug": "Kontoauszuege",
+        "Bankdokument": "Bankdokumente",
         "Sonstiges": "Sonstiges"
     }
     beleg_subfolder = belegtyp_folder_map.get(belegtyp, "Sonstiges")
@@ -134,6 +139,14 @@ def generate_standardized_filename(doc_data: Dict[str, Any]) -> Tuple[str, bool]
     is_lieferant_valid = bool(lieferant) and lieferant.lower() not in [
         "unbekannter lieferant", "unbekannt", "unknown", ""
     ]
+
+    if doc_data.get("belegtyp") == "Kontoauszug" and is_date_valid and is_lieferant_valid:
+        clean_bank = re.sub(r"[^\w\-]", "_", lieferant)
+        return f"{datum}_{clean_bank}_Kontoauszug.pdf", True
+    if doc_data.get("belegtyp") == "Bankdokument":
+        fallback_date = datum if is_date_valid else datetime.datetime.now().strftime("%Y-%m-%d")
+        clean_bank = re.sub(r"[^\w\-]", "_", lieferant or "Bank")
+        return f"{fallback_date}_{clean_bank}_Bankdokument.pdf", True
 
     # Brutto validieren
     is_brutto_valid = brutto is not None and isinstance(brutto, (int, float)) and brutto > 0.0
@@ -162,7 +175,7 @@ class DriveSorter:
     def __init__(self, mode: str = "auto", credentials_path: str = "credentials.json", service_account_path: str = "service_account.json"):
         self.credentials_path = credentials_path
         self.service_account_path = service_account_path
-        
+
         if mode == "auto":
             if os.path.exists(service_account_path) or os.path.exists(credentials_path):
                 self.mode = "real"
@@ -183,6 +196,18 @@ class DriveSorter:
             except Exception as e:
                 logger.error(f"[DriveSorter] Google API Authentifizierung fehlgeschlagen: {e}. Fallback auf Mock.")
                 self.mode = "mock"
+
+    def _index_and_verify_beleg(self, doc_data: Dict[str, Any], beleg_id: str) -> None:
+        """Schreibt Wiki/RAG und bricht bei unvollständiger Persistenz sichtbar ab."""
+        wiki_engine.create_or_update_beleg_page(doc_data, beleg_id)
+        rag_engine.index_beleg(doc_data, beleg_id)
+        verification = rag_engine.verify_beleg_persistence(beleg_id)
+        doc_data["persistence_verification"] = verification
+        doc_data["persistence_verified"] = verification["ok"]
+        if not verification["ok"]:
+            raise RuntimeError(
+                f"[RAG ERROR] Beleg {beleg_id} nicht vollständig persistent: {verification}"
+            )
 
     def check_md5_exists(self, md5_hash: str) -> bool:
         """Prüft, ob der MD5-Hash bereits im Dashboard oder im Obsidian-Wiki vorhanden ist."""
@@ -314,9 +339,14 @@ class DriveSorter:
             if self.mode == "mock":
                 root_path = MOCK_DRIVE_DIR / "[ VG_Delikatessen_Zentrale ]"
                 beleg_id = self._update_dashboard_mock(root_path, doc_data, Path("DUBLITTE_MD5_NO_SAVE"))
+                doc_data["beleg_link"] = "DUBLITTE_MD5_NO_SAVE"
             else:
                 root_id = find_or_create_folder(self.drive_service, "[ VG_Delikatessen_Zentrale ]")
                 beleg_id = self._update_dashboard_real(root_id, doc_data, "DUBLITTE_MD5_NO_SAVE")
+                doc_data["beleg_link"] = "DUBLITTE_MD5_NO_SAVE"
+
+            doc_data["beleg_id"] = beleg_id
+            self._index_and_verify_beleg(doc_data, beleg_id)
                 
             return {
                 "saved_path": "DUBLITTE_MD5_NO_SAVE",
@@ -328,7 +358,8 @@ class DriveSorter:
 
         # 2. Name generieren
         filename, passed = generate_standardized_filename(doc_data)
-        doc_data["validation_status"] = "PASSED" if passed else "MANUAL_REVIEW_NEEDED"
+        if not doc_data.get("validation_status"):
+            doc_data["validation_status"] = "PASSED" if passed else "MANUAL_REVIEW_NEEDED"
 
         # 3. Metadaten-Matching
         supplier = doc_data.get("lieferant", "")
@@ -371,9 +402,10 @@ class DriveSorter:
 
         beleg_id = self._update_dashboard_mock(root_path, doc_data, target_path)
         doc_data["beleg_id"] = beleg_id
+        doc_data["beleg_link"] = str(target_path.absolute())
 
-        # In FTS5 indizieren
-        rag_engine.index_beleg(doc_data, beleg_id)
+        # Kompakte Wiki-Seite erzeugen und anschließend strukturiert indizieren
+        self._index_and_verify_beleg(doc_data, beleg_id)
 
         return {
             "saved_path": str(target_path),
@@ -433,9 +465,10 @@ class DriveSorter:
 
             beleg_id = self._update_dashboard_real(root_id, doc_data, web_view_link)
             doc_data["beleg_id"] = beleg_id
+            doc_data["beleg_link"] = web_view_link
 
-            # In FTS5 indizieren
-            rag_engine.index_beleg(doc_data, beleg_id)
+            # Kompakte Wiki-Seite erzeugen und anschließend strukturiert indizieren
+            self._index_and_verify_beleg(doc_data, beleg_id)
 
             return {
                 "saved_path": web_view_link,

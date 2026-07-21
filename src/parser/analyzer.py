@@ -39,6 +39,7 @@ class DocumentAnalyzer:
             # Die allererste Seite in der Liste startet den ersten Beleg
             if idx == 0:
                 continue
+            previous_text = pages_info[idx - 1]["full_text"] or ""
 
             # Heuristik 1: Ausschluss von Folgeseiten
             is_continuation = False
@@ -63,10 +64,16 @@ class DocumentAnalyzer:
                 r"(?i)\bpage\s+1\s+(von|of|/)\s+\d+\b",
             ]
             
-            # Ein neuer Beleg startet standardmäßig auf jeder Seite,
-            # es sei denn, sie ist als Fortsetzungsblatt gekennzeichnet.
-            if not is_continuation:
-                is_new_doc = True
+            # Nur ein positives Startsignal trennt. Das verhindert, dass eine
+            # mehrseitige Rechnung wegen einer schwachen Folgeseite zerfällt.
+            is_new_doc = not is_continuation and any(
+                re.search(pattern, text) for pattern in new_doc_patterns
+            )
+            previous_document_complete = bool(re.search(
+                r"(?i)\b(?:seite|page)\s+1\s+(?:von|of|/)\s+1\b",
+                previous_text,
+            ))
+            is_new_doc = is_new_doc or previous_document_complete
 
             # Bei Belegstart: Schließe vorherigen ab
             if is_new_doc:
@@ -76,6 +83,94 @@ class DocumentAnalyzer:
         # Letzten Beleg abschließen
         boundaries.append({"start_page": current_start, "end_page": pages_info[-1]["page_num"]})
         return boundaries
+
+    def _apply_sevdesk_assignment(
+        self,
+        doc_data: Dict[str, Any],
+        assignment: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Reichert Analyseergebnisse deterministisch mit sevDesk-Stammdaten an."""
+        supplier = assignment.get("supplier")
+        if supplier:
+            doc_data["lieferant"] = supplier["name"]
+            doc_data["sevdesk_kunden_nr"] = supplier["kunden_nr"]
+            doc_data["kreditoren_nr"] = supplier.get("kreditoren_nr")
+            doc_data["zahlungsziel_tage"] = supplier.get("zahlungsziel_tage")
+            doc_data["skonto_tage"] = supplier.get("skonto_tage")
+            doc_data["skonto_prozent"] = supplier.get("skonto_prozent")
+            doc_data["lieferant_match_source"] = "sevdesk_contacts"
+
+        articles = assignment.get("articles") or []
+        if articles:
+            doc_data["sevdesk_artikel_matches"] = [
+                {"artikelnummer": item["artikelnummer"], "name": item["name"]}
+                for item in articles
+            ]
+            tax_rates = [item.get("umsatzsteuer") for item in articles if item.get("umsatzsteuer") in (7.0, 19.0)]
+            if tax_rates:
+                dominant_tax = max(set(tax_rates), key=tax_rates.count)
+                doc_data["steuersatz_prozent"] = dominant_tax
+                doc_data["steuer_match_source"] = "sevdesk_articles"
+                if dominant_tax == 7.0:
+                    doc_data["warengruppe"] = "Lebensmittel"
+                    doc_data["skr03_konto"] = "3400"
+                    doc_data["skr04_konto"] = "5400"
+                else:
+                    doc_data["warengruppe"] = "Betriebsbedarf"
+                    doc_data["skr03_konto"] = "4900"
+                    doc_data["skr04_konto"] = "6300"
+        return doc_data
+
+    def detect_high_priority_document_type(self, text: str) -> Optional[Dict[str, Any]]:
+        """Erkennt Dokumenttypen, die niemals als Lieferantenrechnung behandelt werden dürfen."""
+        normalized = re.sub(r"\s+", " ", text.casefold())
+        bank_markers = {
+            "Commerzbank": ("commerzbank", "cobadeff"),
+            "Deutsche Bank": ("deutsche bank", "deutde"),
+            "Sparkasse": ("sparkasse",),
+            "Volksbank/Raiffeisenbank": ("volksbank", "raiffeisenbank"),
+        }
+        bank = next(
+            (name for name, markers in bank_markers.items() if any(marker in normalized for marker in markers)),
+            None,
+        )
+        statement_signals = [
+            "kontoauszug" in normalized,
+            bool(re.search(r"auszug[\s-]*nr", normalized)),
+            "kontonummer" in normalized,
+            "buchungsdatum" in normalized,
+            "zu ihren lasten" in normalized and "zu ihren gunsten" in normalized,
+        ]
+        if bank and sum(statement_signals) >= 3:
+            date_match = re.search(
+                r"kontoauszug\s+vom\s+(\d{2})\.(\d{2})\.(\d{4})", normalized
+            )
+            datum = ""
+            if date_match:
+                day, month, year = date_match.groups()
+                datum = f"{year}-{month}-{day}"
+            return {
+                "lieferant": bank, "datum": datum,
+                "netto": 0.0, "steuer": 0.0, "brutto": 0.0,
+                "rechnungsnummer": "NICHT_ANWENDBAR",
+                "confidence_score": 1.0, "warengruppe": "Bankdokument",
+                "belegtyp": "Kontoauszug",
+                "validation_status": "CLASSIFIED_NON_BOOKABLE",
+                "validation_reason": "Kontoauszug erkannt; keine Lieferantenrechnung und keine automatische Buchung.",
+                "classification_source": "bank_statement_guard",
+            }
+        if "einlagensicherungsfonds" in normalized or "bedingungen für den zahlungsverkehr" in normalized:
+            return {
+                "lieferant": bank or "Bank",
+                "datum": "", "netto": 0.0, "steuer": 0.0, "brutto": 0.0,
+                "rechnungsnummer": "NICHT_ANWENDBAR",
+                "confidence_score": 0.99, "warengruppe": "Bankdokument",
+                "belegtyp": "Bankdokument",
+                "validation_status": "CLASSIFIED_NON_BOOKABLE",
+                "validation_reason": "Bankbedingungen/Einlagensicherung erkannt; nicht buchbar.",
+                "classification_source": "bank_terms_guard",
+            }
+        return None
 
     def try_regex_extraction(self, text: str) -> Optional[Dict[str, Any]]:
         """
@@ -199,12 +294,14 @@ class DocumentAnalyzer:
             netto = round(amount / (1 + steuer_satz / 100.0), 2)
             steuer = round(amount - netto, 2)
             validation_passed = True
+            amounts_estimated = True
         else:
             # Wenn die Mathe aufging, berechne den Steuersatz aus Netto & Steuer
             if netto > 0:
                 steuer_satz = round((steuer / netto) * 100.0)
             else:
                 steuer_satz = 19.0
+            amounts_estimated = False
 
         
         # Steuersatzkonto bestimmen
@@ -233,21 +330,28 @@ class DocumentAnalyzer:
             "steuer": steuer,
             "brutto": amount,
             "rechnungsnummer": "REG-EXPR",
-            "confidence_score": 1.0,
+            "confidence_score": 0.70 if amounts_estimated else 1.0,
             "warengruppe": "Fleischwaren" if steuer_satz == 7.0 else "Betriebsbedarf",
             "belegtyp": belegtyp,
             "steuersatz_prozent": steuer_satz,
             "skr03_konto": skr03,
             "skr04_konto": skr04,
             "validation_status": "PASSED",
+            "amounts_estimated": amounts_estimated,
             "raw_text": text
         }
 
-    def analyze_page_stack(self, pages_info: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def analyze_page_stack(
+        self, pages_info: List[Dict[str, Any]], presegmented: bool = False
+    ) -> List[Dict[str, Any]]:
         """
         Analysiert einen Stapel von PDF-Seiten, erkennt Beleggrenzen und extrahiert Rechnungsdaten.
         """
-        boundaries = self.detect_boundaries(pages_info)
+        sorted_pages = sorted(pages_info, key=lambda item: item["page_num"])
+        boundaries = ([{
+            "start_page": sorted_pages[0]["page_num"],
+            "end_page": sorted_pages[-1]["page_num"],
+        }] if presegmented and sorted_pages else self.detect_boundaries(sorted_pages))
         logger.info(f"[Analyzer] Erkannte Beleggrenzen: {boundaries}")
 
         extracted_documents = []
@@ -261,10 +365,23 @@ class DocumentAnalyzer:
             combined_text = ""
             for p in doc_pages:
                 combined_text += f"\n--- SEITE {p['page_num']} ---\n" + (p['full_text'] or "")
+            ocr_scores = [
+                float(p.get("ocr_confidence", 1.0)) for p in doc_pages
+                if p.get("ocr_status") != "TEXT_LAYER"
+            ]
+            ocr_failed = any(p.get("ocr_status") == "OCR_FAILED" for p in doc_pages)
 
-            # 1. Regelbasierter Erstversuch via Regex
-            regex_data = self.try_regex_extraction(combined_text)
-            if regex_data:
+            sevdesk_assignment = rag_engine.match_sevdesk_assignment(combined_text)
+            search_query = self._build_rag_query(combined_text)
+            rag_hits = rag_engine.search(search_query, top_k=5)
+            rag_context_ids = [hit.get("doc_id") for hit in rag_hits]
+
+            protected_type = self.detect_high_priority_document_type(combined_text)
+            regex_data = None if protected_type else self.try_regex_extraction(combined_text)
+            if protected_type:
+                logger.info(f"[Analyzer] Geschützter Dokumenttyp Kontoauszug auf Seiten {start}-{end} erkannt.")
+                doc_data = protected_type
+            elif regex_data:
                 logger.info(f"[Analyzer] Regex-Extraktion erfolgreich für Seiten {start}-{end}")
                 doc_data = regex_data
             else:
@@ -272,18 +389,24 @@ class DocumentAnalyzer:
                 logger.info(f"[Analyzer] Regex-Extraktion unvollständig für Seiten {start}-{end}. Starte KI-Fallback...")
 
                 # RAG Suche nach bekannten Lieferanten und Kontenregeln
-                rag_hits = rag_engine.search(combined_text[:500], top_k=2)
                 rag_context = "\n".join([f"- {h['content']}" for h in rag_hits]) if rag_hits else "Keine spezifischen RAG-Muster."
+                supplier_context = sevdesk_assignment.get("supplier") or "Kein direkter Lieferantenmatch"
+                article_context = sevdesk_assignment.get("articles") or "Keine direkten Artikelmatches"
 
                 system_prompt = persona_engine.build_system_prompt("Beleg-Analyse & Grenzerkennung")
+                relevant_text = self._build_extraction_context(combined_text)
                 user_prompt = f"""Du bist die Analyse-Engine für VG Delikatessen.
 Analysiere folgenden Textauszug eines Belegs (Seiten {start} bis {end}) und extrahiere alle Rechnungsdaten im exakten JSON-Format.
 
 ### Bekannter RAG-Kontext:
 {rag_context}
 
+### Direkte sevDesk-Stammdatenmatches:
+Lieferant: {supplier_context}
+Artikel: {article_context}
+
 ### Belegtext:
-{combined_text[:4000]}
+{relevant_text}
 
 ### Anforderung an das Ausgabe-JSON:
 Antworte AUSSCHLIESSLICH mit einem validen JSON-Objekt folgender Struktur:
@@ -322,6 +445,15 @@ Du musst versuchen, die Felder so genau wie möglich auszulesen. Falls ein Wert 
                     logger.error(f"[Analyzer] LLM-Analyse fehlgeschlagen für Seiten {start}-{end}: {e}")
                     doc_data = self._get_fallback_doc()
 
+            if not protected_type:
+                doc_data = self._apply_sevdesk_assignment(doc_data, sevdesk_assignment)
+            doc_data["rag_context_ids"] = rag_context_ids
+            doc_data["rag_read_verified"] = True
+            doc_data["ocr_quality_score"] = min(ocr_scores) if ocr_scores else 1.0
+            doc_data["ocr_status"] = "OCR_FAILED" if ocr_failed else (
+                "OCR_WEAK" if ocr_scores and min(ocr_scores) < 0.70 else "OCR_OK"
+            )
+
             doc_data["start_seite"] = start
             doc_data["end_seite"] = end
             if "raw_text" not in doc_data:
@@ -329,6 +461,46 @@ Du musst versuchen, die Felder so genau wie möglich auszulesen. Falls ein Wert 
             extracted_documents.append(doc_data)
 
         return extracted_documents
+
+    def analyze_document(self, pages_info: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Analysiert einen bereits getrennten Beleg ohne zweite Grenzerkennung."""
+        if not pages_info:
+            raise ValueError("Ein Beleg muss mindestens eine Seite enthalten.")
+        pages = sorted(pages_info, key=lambda item: item["page_num"])
+        results = self.analyze_page_stack(pages, presegmented=True)
+        if len(results) != 1:
+            raise RuntimeError(f"Erwartete genau eine Beleganalyse, erhielt {len(results)}.")
+        return results[0]
+
+    @staticmethod
+    def _build_rag_query(text: str) -> str:
+        """Kompakte, informationsreiche Anfrage statt beliebigem Dokumentanfang."""
+        patterns = [
+            r"(?i)(?:rechnung(?:snummer|-nr\.?| nr\.?)|beleg(?:nummer|-nr\.?))\s*[:#]?\s*[\w/-]+",
+            r"(?i)(?:ust-?id|kunden(?:nummer|-nr\.?)|iban)\s*[:#]?\s*[\w /-]+",
+            r"(?i)(?:gesamtbetrag|zahlbetrag|brutto)\D{0,20}\d[\d .]*[,\.]\d{2}",
+        ]
+        parts = [match.group(0) for pattern in patterns for match in re.finditer(pattern, text)]
+        header_words = re.findall(r"[A-Za-zÄÖÜäöüß][\wÄÖÜäöüß&.-]{3,}", text[:800])
+        return " ".join((parts + header_words[:20]))[:1000]
+
+    @staticmethod
+    def _build_extraction_context(text: str, limit: int = 7000) -> str:
+        """Behält Kopf, Schluss und rechnungsrelevante Zeilen im LLM-Kontext."""
+        keywords = re.compile(
+            r"(?i)rechnung|invoice|datum|beleg|kunden|lieferant|netto|mwst|ust|steuer|"
+            r"brutto|gesamt|summe|zahlbetrag|eur|iban|artikel|seite"
+        )
+        relevant = [line.strip() for line in text.splitlines() if keywords.search(line)]
+        pieces = [text[:1800], "\n".join(relevant[:80]), text[-1800:]]
+        seen = set()
+        compact = []
+        for line in "\n".join(pieces).splitlines():
+            normalized = re.sub(r"\s+", " ", line).strip()
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                compact.append(normalized)
+        return "\n".join(compact)[:limit]
 
     def _parse_json_safe(self, text: str) -> Dict[str, Any]:
         """Extrahiert ein JSON-Objekt sicher aus der LLM-Antwort."""
@@ -355,14 +527,15 @@ Du musst versuchen, die Felder so genau wie möglich auszulesen. Falls ein Wert 
     def _get_fallback_doc(self) -> Dict[str, Any]:
         return {
             "lieferant": "Unbekannter Lieferant",
-            "datum": "2026-07-01",
+            "datum": "",
             "netto": 0.0,
             "steuer": 0.0,
             "brutto": 0.0,
             "rechnungsnummer": "UNBEKANNT",
             "confidence_score": 0.50,
             "warengruppe": "Unbekannt",
-            "belegtyp": "Sonstiges"
+            "belegtyp": "Sonstiges",
+            "extraction_status": "EXTRACTION_FAILED",
         }
 
 

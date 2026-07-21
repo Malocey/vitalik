@@ -9,6 +9,8 @@ Implementiert das 'LLM Wiki' Konzept von Andrej Karpathy:
 """
 
 import json
+import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -35,7 +37,15 @@ class KarpathyLLMWikiEngine:
         log_entry = f"## [{timestamp}] {action_type.upper()} | {summary}\n"
 
         existing = self.log_file.read_text(encoding="utf-8") if self.log_file.exists() else "# 📜 VG Delikatessen LLM-Wiki Log\n\n"
+        os.makedirs(os.path.dirname(self.log_file), exist_ok=True)
         self.log_file.write_text(existing + log_entry, encoding="utf-8")
+        rag_engine.index_document(
+            doc_id="wiki_log",
+            title="VG Delikatessen LLM-Wiki Log",
+            content=existing + log_entry,
+            source=str(self.log_file),
+            category="wiki_system",
+        )
 
     def create_or_update_page(
         self,
@@ -59,10 +69,11 @@ class KarpathyLLMWikiEngine:
             links_section = "\n\n### 🔗 Querverweise\n" + "\n".join([f"- [{link}](./{link}.md)" for link in cross_links])
 
         full_markdown = header + content.strip() + links_section + "\n"
+        os.makedirs(os.path.dirname(page_path), exist_ok=True)
         page_path.write_text(full_markdown, encoding="utf-8")
 
         # Ins RAG-System einspeisen
-        rag_engine.add_document(
+        rag_engine.index_document(
             doc_id=f"wiki_{slug}",
             title=title,
             content=full_markdown,
@@ -72,6 +83,78 @@ class KarpathyLLMWikiEngine:
 
         self.rebuild_index_page()
         self.log_event("UPDATE_PAGE", f"Seite '{title}' ({file_name}) erstellt/aktualisiert.")
+        return page_path
+
+    def create_or_update_beleg_page(
+        self,
+        doc_data: Dict[str, Any],
+        beleg_id: str,
+    ) -> Path:
+        """Schreibt einen verarbeiteten Beleg als persistente Markdown-Wiki-Seite."""
+        safe_id = re.sub(r"[^a-zA-Z0-9_-]+", "_", str(beleg_id)).strip("_")
+        if not safe_id:
+            raise ValueError("Für die Wiki-Indizierung ist eine gültige Beleg-ID erforderlich.")
+
+        lieferant = doc_data.get("lieferant", "")
+        datum = doc_data.get("datum", "")
+        brutto = doc_data.get("brutto", "")
+        raw_text = doc_data.get("raw_text")
+        if not raw_text or not str(raw_text).strip():
+            raw_text = (
+                f"Lieferant: {lieferant}, Datum: {datum}, Betrag: {brutto} EUR, "
+                f"Beleg-ID: {beleg_id}"
+            )
+
+        raw_path = RAW_SOURCES_DIR / "belege" / f"beleg_{safe_id}.txt"
+        os.makedirs(os.path.dirname(raw_path), exist_ok=True)
+        raw_path.write_text(str(raw_text), encoding="utf-8")
+        doc_data["raw_text_path"] = str(raw_path)
+
+        summary = doc_data.get("summary") or (
+            f"{doc_data.get('belegtyp', 'Beleg')} von {lieferant} vom {datum} "
+            f"über {brutto} EUR. Warengruppe: "
+            f"{doc_data.get('warengruppe', 'Unbekannt')}. "
+            f"Status: {doc_data.get('validation_status', 'Unbekannt')}."
+        )
+        doc_data["summary"] = summary
+        beleg_link = doc_data.get("beleg_link", "")
+        link_line = f"- **Originalbeleg:** [PDF öffnen](<{beleg_link}>)\n" if beleg_link else ""
+        assignment_lines = ""
+        if doc_data.get("lieferant_match_source"):
+            assignment_lines += (
+                f"- **sevDesk-Kontakt:** {doc_data.get('sevdesk_kunden_nr', '')}\n"
+                f"- **Kreditorennummer:** {doc_data.get('kreditoren_nr', '')}\n"
+                f"- **Zahlungsziel:** {doc_data.get('zahlungsziel_tage', '')} Tage\n"
+                f"- **Zuordnungsquelle:** sevDesk-Kontakte\n"
+            )
+        article_matches = doc_data.get("sevdesk_artikel_matches") or []
+        if article_matches:
+            assignment_lines += "- **sevDesk-Artikel:** " + ", ".join(
+                f"{item.get('artikelnummer')} ({item.get('name')})" for item in article_matches
+            ) + "\n"
+
+        content = (
+            f"## Belegdaten\n\n"
+            f"- **Beleg-ID:** {beleg_id}\n"
+            f"- **Lieferant:** {lieferant}\n"
+            f"- **Datum:** {datum}\n"
+            f"- **Bruttobetrag:** {brutto} EUR\n"
+            f"- **Nettobetrag:** {doc_data.get('netto', '')} EUR\n"
+            f"- **Umsatzsteuer:** {doc_data.get('steuer', '')} EUR\n"
+            f"- **Rechnungsnummer:** {doc_data.get('rechnungsnummer', '')}\n"
+            f"- **Warengruppe:** {doc_data.get('warengruppe', '')}\n"
+            f"- **SKR03-Konto:** {doc_data.get('skr03_konto', '')}\n"
+            f"- **Validierungsstatus:** {doc_data.get('validation_status', '')}\n\n"
+            f"{assignment_lines}{link_line}\n## Zusammenfassung\n\n{summary}\n\n"
+            f"## Quelldaten\n\nVollständiger OCR-Text: `{raw_path}`"
+        )
+        page_path = self.create_or_update_page(
+            slug=f"beleg_{safe_id}",
+            title=f"Beleg {beleg_id} – {lieferant}",
+            content=content,
+            category="beleg",
+        )
+        doc_data["wiki_path"] = str(page_path)
         return page_path
 
     def rebuild_index_page(self):
@@ -114,7 +197,15 @@ class KarpathyLLMWikiEngine:
                 content += f"- **[{item['title']}](./{item['filename']})**: {item['summary']}...\n"
             content += "\n"
 
+        os.makedirs(os.path.dirname(self.index_file), exist_ok=True)
         self.index_file.write_text(content, encoding="utf-8")
+        rag_engine.index_document(
+            doc_id="wiki_index",
+            title="VG Delikatessen LLM-Wiki Index",
+            content=content,
+            source=str(self.index_file),
+            category="wiki_system",
+        )
 
     def save_compounding_answer(self, query: str, answer: str) -> Path:
         """
@@ -213,7 +304,7 @@ class KarpathyLLMWikiEngine:
         nodes = []
         edges = []
         
-        pages = list(self.wiki_dir.glob("*.md"))
+        pages = list(self.wiki_dir.rglob("*.md"))
         page_metadata = {}
         
         # 1. Knoten sammeln
