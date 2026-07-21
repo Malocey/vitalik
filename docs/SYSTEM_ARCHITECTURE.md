@@ -37,13 +37,13 @@ sichere Ordnerlauf liegt in `src/core/process_document_folder.py`.
 
 | Bereich | Zentrale Dateien | Aufgabe | Status |
 |---|---|---|---|
-| PDF/OCR | `src/parser/pdf_engine.py`, `ocr_engine.py` | Seiten, Text, 300-DPI-OCR und Cache | integriert |
-| Multi-Format | `src/parser/multi_format_engine.py` | DOCX, XLSX, CSV, EML, MSG, TXT & PDF importieren | integriert |
+| PDF/OCR | `src/parser/pdf_engine.py`, `ocr_engine.py` | Seiten, Text, 300-DPI-OCR, MD5-Cache & Parallel-OCR | integriert |
+| Multi-Format | `src/parser/multi_format_engine.py` | Parallel-Batch-Import (DOCX, XLSX, CSV, EML, MSG, PDF) | integriert |
 | Trennung | `boundary_detector_v2.py`, `analyzer.py` | Beleggrenzen und Analyse | integriert |
 | Extraktion | `document_type_classifier.py`, `amount_parser.py` | Typen und Beträge deterministisch erkennen | integriert |
 | KI-Pool | `local_llm_client.py` | LM-Studio-Endpunkte verteilen, begrenzen und abkühlen | integriert |
 | Validierung | `validation_shield.py` | Pflichtfelder, Beträge, Steuer und Kontierung prüfen | integriert |
-| Gedächtnis | `rag_engine.py` | SQLite, FTS5, Vektorsuche und sevDesk-Matching | integriert |
+| Gedächtnis | `rag_engine.py` | SQLite (WAL + 64MB RAM Cache), FTS5, Vektorsuche | integriert |
 | Wiki | `wiki_engine.py` | Markdown-Seiten, Index und Graphdaten | integriert |
 | Ordnerlauf | `process_document_folder.py` | Done-Markierung und CSV-Inventar | integriert |
 | Benchmark | `benchmark_document_pipeline.py` | read-only Qualitätsmessung | integriert |

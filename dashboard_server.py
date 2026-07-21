@@ -246,12 +246,11 @@ async def post_scan_directory(request: ScanRequest):
     supported_extensions = list(multi_format_engine.SUPPORTED_EXTENSIONS)
     files = [f for f in target_dir.rglob("*") if f.is_file() and f.suffix.lower() in supported_extensions]
 
-    if not files:
-        return {"status": "warning", "message": f"Keine passenden Belege in {target_dir} gefunden.", "results": []}
+    batch_pages_info = multi_format_engine.extract_batch_parallel(files, max_workers=8)
 
     for file_path in files:
         try:
-            pages_info = multi_format_engine.extract_document(file_path)
+            pages_info = batch_pages_info.get(str(file_path)) or multi_format_engine.extract_document(file_path)
             extracted_docs = document_analyzer.analyze_page_stack(pages_info)
             
             for doc in extracted_docs:

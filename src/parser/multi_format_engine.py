@@ -211,5 +211,32 @@ class MultiFormatEngine:
                 "ocr_confidence": 0.0
             }]
 
+    def extract_batch_parallel(self, file_paths: List[Path], max_workers: int = 8) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Liest mehrere Dateien parallel über einen ThreadPoolExecutor ein.
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        results = {}
+        if not file_paths:
+            return results
+            
+        workers = min(max_workers, len(file_paths))
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            future_to_file = {executor.submit(self.extract_document, f): str(f) for f in file_paths}
+            for future in as_completed(future_to_file):
+                f_path = future_to_file[future]
+                try:
+                    results[f_path] = future.result()
+                except Exception as e:
+                    logger.warning(f"[MultiFormatEngine] Fehler beim parallelen Lesen von {f_path}: {e}")
+                    results[f_path] = [{
+                        "page_num": 1,
+                        "text_snippet": f"Fehler: {e}",
+                        "full_text": "",
+                        "ocr_status": "ERROR",
+                        "ocr_confidence": 0.0
+                    }]
+        return results
+
 
 multi_format_engine = MultiFormatEngine()

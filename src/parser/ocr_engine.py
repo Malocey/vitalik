@@ -6,7 +6,7 @@ Unterstützt pytesseract / Tesseract OCR mit Fallback-Mechanismus.
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 logger = logging.getLogger("OCREngine")
 
@@ -20,11 +20,11 @@ except ImportError:
 
 class OCREngine:
     def __init__(self, tesseract_cmd: Optional[str] = None):
+        self._page_cache: Dict[str, Dict[str, Any]] = {}
         if HAS_PYTESSERACT:
             if tesseract_cmd:
                 pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
             else:
-                # Default Windows-Pfade prüfen
                 default_paths = [
                     r"C:\Program Files\Tesseract-OCR\tesseract.exe",
                     r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
@@ -35,12 +35,25 @@ class OCREngine:
                         logger.info(f"[OCR] Tesseract-Binary unter {path} gefunden.")
                         break
 
+    def _compute_md5(self, path: Path) -> str:
+        import hashlib
+        try:
+            return hashlib.md5(path.read_bytes()).hexdigest()
+        except Exception:
+            return str(path.name)
+
     def extract_with_quality(self, image_path: Path, lang: str = "deu+eng") -> Dict[str, Any]:
-        """OCR mit messbarer Wortkonfidenz; erzeugt niemals synthetischen Inhalt."""
+        """OCR mit MD5-Seitencache (0.00s bei bereits verarbeiteten Bildern)."""
         result = {"text": "", "confidence": 0.0, "status": "OCR_FAILED"}
         if not image_path.exists():
             logger.error(f"[OCR ERROR] Datei nicht gefunden: {image_path}")
             return result
+
+        md5_hash = self._compute_md5(image_path)
+        if md5_hash in self._page_cache:
+            logger.info(f"[OCR CACHE HIT] {image_path.name} aus MD5-Cache geladen (0.00s).")
+            return self._page_cache[md5_hash]
+
         if not HAS_PYTESSERACT:
             logger.error("[OCR ERROR] pytesseract/Tesseract ist nicht verfügbar.")
             return result
@@ -67,15 +80,34 @@ class OCREngine:
             logger.info(
                 f"[OCR] {len(text)} Zeichen, Qualität {score:.2f} aus {image_path.name}."
             )
-            return {"text": text, "confidence": round(score, 4), "status": status}
+            res = {"text": text, "confidence": round(score, 4), "status": status}
+            self._page_cache[md5_hash] = res
+            return res
         except Exception as exc:
             logger.exception(f"[OCR ERROR] Texterkennung fehlgeschlagen: {exc}")
-            return result
+            res = {"text": "", "confidence": 0.0, "status": f"OCR_FAILED: {exc}"}
+            self._page_cache[md5_hash] = res
+            return res
+
+    def extract_batch_images_parallel(self, image_paths: List[Path], max_workers: int = 4) -> Dict[str, Dict[str, Any]]:
+        """Verarbeitet mehrere Bilddateien parallel über CPU-Threads."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        results = {}
+        if not image_paths:
+            return results
+
+        workers = min(max_workers, len(image_paths))
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            future_map = {executor.submit(self.extract_with_quality, p): str(p) for p in image_paths}
+            for future in as_completed(future_map):
+                p_str = future_map[future]
+                try:
+                    results[p_str] = future.result()
+                except Exception as e:
+                    results[p_str] = {"text": "", "confidence": 0.0, "status": f"OCR_ERROR: {e}"}
+        return results
 
     def extract_text_from_image(self, image_path: Path, lang: str = "deu+eng") -> str:
-        """
-        Führt eine OCR-Texterkennung auf einer Bilddatei (PNG, JPG, TIFF) aus.
-        """
         return self.extract_with_quality(image_path, lang=lang)["text"]
 
 
