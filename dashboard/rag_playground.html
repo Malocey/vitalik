@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VG Delikatessen - RAG Playground</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #090d16;
+            --card-bg: rgba(22, 30, 49, 0.75);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --accent-purple: #6366f1;
+            --accent-blue: #3b82f6;
+            --accent-emerald: #10b981;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-dark);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(59, 130, 246, 0.12) 0px, transparent 50%);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 24px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 28px;
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 18px;
+            margin-bottom: 24px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+
+        .brand-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 26px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #a5b4fc 0%, #6366f1 50%, #38bdf8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 9999px;
+            color: #34d399;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .pulse-dot {
+            width: 8px;
+            height: 8px;
+            background-color: #10b981;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #10b981;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .playground-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 18px;
+            padding: 28px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+        }
+
+        .card-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            color: #a5b4fc;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .query-box {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .query-input {
+            flex-grow: 1;
+            padding: 16px 20px;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--card-border);
+            border-radius: 14px;
+            color: var(--text-main);
+            font-size: 16px;
+            font-family: 'Inter', sans-serif;
+            transition: all 0.2s ease;
+        }
+
+        .query-input:focus {
+            outline: none;
+            border-color: var(--accent-purple);
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+            background: rgba(15, 23, 42, 0.8);
+        }
+
+        .query-btn {
+            padding: 16px 32px;
+            border: none;
+            border-radius: 14px;
+            background: linear-gradient(135deg, #6366f1 0%, #3b82f6 100%);
+            color: white;
+            font-weight: 700;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+
+        .query-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+        }
+
+        .query-btn:active {
+            transform: translateY(1px);
+        }
+
+        .response-box {
+            display: none;
+            border-top: 1px solid var(--card-border);
+            padding-top: 24px;
+            margin-top: 20px;
+            animation: fadeIn 0.4s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .answer-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--accent-emerald);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .answer-text {
+            background: rgba(15, 23, 42, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 14px;
+            padding: 20px;
+            line-height: 1.6;
+            font-size: 15px;
+            color: #e2e8f0;
+            margin-bottom: 24px;
+            white-space: pre-wrap;
+        }
+
+        .sources-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 16px;
+            font-weight: 700;
+            color: #3b82f6;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sources-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .source-item {
+            background: rgba(15, 23, 42, 0.3);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            padding: 12px 16px;
+            font-size: 13px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .source-name {
+            font-weight: 600;
+            color: #f1f5f9;
+        }
+
+        .source-link {
+            color: #60a5fa;
+            text-decoration: none;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: color 0.15s ease;
+        }
+
+        .source-link:hover {
+            color: #93c5fd;
+            text-decoration: underline;
+        }
+
+        .spinner {
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            gap: 16px;
+            padding: 40px;
+        }
+
+        .spinner-icon {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top-color: var(--accent-purple);
+            border-radius: 50%;
+            animation: spin 1s infinite linear;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="brand-title">
+                <span>🥩</span> VG Delikatessen - Ordner-Scanner & RAG System
+            </div>
+            <div style="display: flex; gap: 16px; align-items: center;">
+                <a href="/" style="color: #94a3b8; text-decoration: none; font-weight: 600; font-size: 14px; padding: 8px 16px; background: rgba(255, 255, 255, 0.03); border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.05); transition: all 0.2s;" onmouseover="this.style.color='#f8fafc'; this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.color='#94a3b8'; this.style.background='rgba(255,255,255,0.03)'">🏠 Dashboard</a>
+                <a href="/rag" style="color: #f8fafc; text-decoration: none; font-weight: 600; font-size: 14px; padding: 8px 16px; background: rgba(99, 102, 241, 0.15); border-radius: 10px; border: 1px solid rgba(99, 102, 241, 0.3); transition: all 0.2s;">🔍 RAG Playground</a>
+                <a href="/wiki-graph" style="color: #94a3b8; text-decoration: none; font-weight: 600; font-size: 14px; padding: 8px 16px; background: rgba(255, 255, 255, 0.03); border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.05); transition: all 0.2s;" onmouseover="this.style.color='#f8fafc'; this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.color='#94a3b8'; this.style.background='rgba(255,255,255,0.03)'">🕸️ Wiki Graph</a>
+            </div>
+            <div class="status-badge">
+                <span class="pulse-dot"></span>
+                <span>Local System Active</span>
+            </div>
+        </div>
+
+        <!-- Playground Panel -->
+        <div class="playground-card">
+            <div class="card-title">
+                <span>🧠</span> Beleg-Gedächtnis RAG Playground
+            </div>
+            
+            <div class="query-box">
+                <input type="text" id="query-input" class="query-input" placeholder="Fragen Sie das System (z.B. 'Welche Lieferantenrechnungen wurden gebucht?', 'Wie lauten die Steuerkonten für Lebensmittel?')..." onkeydown="if(event.key === 'Enter') submitQuery()">
+                <button onclick="submitQuery()" class="query-btn">
+                    <span>Ask AI</span> ➔
+                </button>
+            </div>
+
+            <!-- Loading Spinner -->
+            <div id="loading" class="spinner">
+                <div class="spinner-icon"></div>
+                <div style="color: var(--text-muted); font-size: 14px;">Durchsuche Vektordatenbank & generiere personalisierte Antwort...</div>
+            </div>
+
+            <!-- Response Box -->
+            <div id="response" class="response-box">
+                <div class="answer-title">
+                    <span>✨</span> Generierte Antwort im Vitalik-Schreibstil:
+                </div>
+                <div id="answer-text" class="answer-text"></div>
+
+                <div class="sources-title">
+                    <span>🔗</span> Referenzen & Quellen:
+                </div>
+                <ul id="sources-list" class="sources-list"></ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function submitQuery() {
+            const query = document.getElementById("query-input").value.trim();
+            if (!query) return;
+
+            // UI zurücksetzen
+            document.getElementById("response").style.display = "none";
+            document.getElementById("loading").style.display = "flex";
+
+            try {
+                const response = await fetch("/api/rag", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ query: query })
+                });
+
+                const data = await response.json();
+                
+                // Renders response
+                document.getElementById("answer-text").textContent = data.answer;
+                
+                // Renders sources
+                const sourcesList = document.getElementById("sources-list");
+                sourcesList.innerHTML = "";
+                
+                if (data.retrieved_chunks && data.retrieved_chunks.length > 0) {
+                    // Eindeutige Quellen filtern
+                    const uniqueSources = {};
+                    data.retrieved_chunks.forEach(chunk => {
+                        const name = chunk.title || chunk.doc_id;
+                        uniqueSources[name] = chunk.source;
+                    });
+
+                    Object.keys(uniqueSources).forEach(name => {
+                        const li = document.createElement("li");
+                        li.className = "source-item";
+                        
+                        const nameSpan = document.createElement("span");
+                        nameSpan.className = "source-name";
+                        nameSpan.textContent = name;
+                        
+                        li.appendChild(nameSpan);
+
+                        // Falls der Pfad zu einem Google Drive Beleg zeigt, Link anbieten
+                        const path = uniqueSources[name];
+                        if (path && (path.endsWith(".pdf") || path.includes("Drive"))) {
+                            // PDF Link zu lokalem static server
+                            const cleanPath = path.replace(/\\/g, "/");
+                            const parts = cleanPath.split("Drive/");
+                            let linkUrl = "";
+                            if (parts.length > 1) {
+                                linkUrl = "/static/drive/" + encodeURI(parts[1]);
+                            } else {
+                                linkUrl = "#";
+                            }
+                            
+                            if (linkUrl !== "#") {
+                                const a = document.createElement("a");
+                                a.className = "source-link";
+                                a.href = linkUrl;
+                                a.target = "_blank";
+                                a.textContent = "📄 PDF öffnen";
+                                li.appendChild(a);
+                            }
+                        }
+                        
+                        sourcesList.appendChild(li);
+                    });
+                } else {
+                    const li = document.createElement("li");
+                    li.className = "source-item";
+                    li.style.color = "var(--text-muted)";
+                    li.textContent = "Keine konkreten Quellbelege gefunden.";
+                    sourcesList.appendChild(li);
+                }
+
+                document.getElementById("loading").style.display = "none";
+                document.getElementById("response").style.display = "block";
+
+            } catch (error) {
+                console.error("Fehler beim Abrufen der RAG-Daten:", error);
+                alert("Fehler bei RAG-Anfrage. Prüfen Sie den Server.");
+                document.getElementById("loading").style.display = "none";
+            }
+        }
+    </script>
+</body>
+</html>

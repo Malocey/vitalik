@@ -1,0 +1,19 @@
+# 📖 VG Delikatessen LLM-Wiki Index
+*Persistent Compounding Knowledge Base | Stand: 2026-07-21 17:19*
+
+--- 
+
+## 📁 Inhaltskatalog
+
+### Allgemein
+- **[📖 VG Delikatessen LLM-Wiki Index](./INDEX.md)**: ---...
+
+### Workflow
+- **[Beleg-Pipeline & 3-Stufen-Schutzschild](./beleg_pipeline_anleitung.md)**: 1. **Scans & PDFs**: 100-seitige Stapel werden zerschnitten und per RAG, OCR & LLM analysiert....
+
+### Buchhaltung
+- **[Lieferanten & SKR03/SKR04 Steuerzuordnung](./lieferanten_und_kontenrahmen.md)**: 1. **Fleischwaren & Lebensmittel (7% USt)**:...
+
+### Persona
+- **[Vitalik Persona & Schreibstil](./vitalik_persona_und_stil.md)**: - **Stil**: Direkt, pragmatisch, gastfreundlich, qualitätsbewusst....
+
