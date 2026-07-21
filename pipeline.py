@@ -8,6 +8,8 @@ import datetime
 import json
 import logging
 import time
+import os
+import uuid
 from pathlib import Path
 from typing import Dict, Any, List
 from src.core.config import (
@@ -18,6 +20,8 @@ from src.parser.pdf_engine import pdf_engine
 from src.parser.analyzer import document_analyzer
 from src.core.validation_shield import validation_shield
 from src.core.rag_engine import rag_engine
+from src.core.contact_memory import contact_memory
+from src.core.pipeline_job_adapter import pipeline_job_adapter
 from src.core.mocks import mock_drive, mock_telegram, mock_sevdesk
 from src.drive.sorter import DriveSorter
 
@@ -26,10 +30,17 @@ logger = logging.getLogger("Pipeline")
 
 
 class ArchivePipeline:
-    def __init__(self, checkpoint_file: Path = CHECKPOINT_FILE):
+    def __init__(
+        self,
+        checkpoint_file: Path = CHECKPOINT_FILE,
+        job_adapter=pipeline_job_adapter,
+        contact_store=contact_memory,
+    ):
         self.checkpoint_file = checkpoint_file
         self.checkpoint = self._load_checkpoint()
         self.sorter = DriveSorter()
+        self.job_adapter = job_adapter
+        self.contact_store = contact_store
 
     def _load_checkpoint(self) -> Dict[str, Any]:
         if self.checkpoint_file.exists():
@@ -43,6 +54,20 @@ class ArchivePipeline:
     def _save_checkpoint(self):
         with open(self.checkpoint_file, "w", encoding="utf-8") as f:
             json.dump(self.checkpoint, f, ensure_ascii=False, indent=2)
+
+    def _learn_contacts(self, document: Dict[str, Any], fallback_id: str) -> Dict[str, Any]:
+        result = self.contact_store.learn_from_document(
+            document, document.get("beleg_id") or fallback_id
+        )
+        document["contact_memory"] = result
+        conflicts = [
+            entity for entity in result.get("entities", [])
+            if entity.get("status") == "REVIEW_CONFLICT"
+        ]
+        if conflicts:
+            document["contact_review_required"] = True
+            logger.warning("[Pipeline] Kontaktkonflikt benötigt Prüfung: %s", conflicts)
+        return result
 
     def process_pdf_archive(self, pdf_path: Path, source_action: str = "archive") -> List[Dict[str, Any]]:
         """
@@ -89,6 +114,8 @@ class ArchivePipeline:
             start = bound["start_page"]
             end = bound["end_page"]
             
+            job_id = None
+            worker_id = f"pipeline-{os.getpid()}-{threading.get_ident()}-{uuid.uuid4().hex[:8]}"
             try:
                 # 1. Temporär zerschneiden, um MD5-Hash zu berechnen
                 temp_dir = Path("data/temp")
@@ -104,6 +131,33 @@ class ArchivePipeline:
                 
                 if temp_pdf_path.exists():
                     temp_pdf_path.unlink()
+
+                job = self.job_adapter.acquire(
+                    str(pdf_path.resolve()), md5_hash, start, end, worker_id
+                )
+                if not job:
+                    raise RuntimeError("Dokumentjob konnte nicht angelegt werden")
+                job_id = job["job_id"]
+                if not job.get("lease_acquired"):
+                    if job.get("status") == "COMMITTED":
+                        existing_doc = rag_engine.find_beleg_by_md5(md5_hash)
+                        if existing_doc:
+                            self._learn_contacts(existing_doc, job_id)
+                            existing_doc["start_seite"] = start
+                            existing_doc["end_seite"] = end
+                            res = {
+                                "doc": existing_doc,
+                                "passed": existing_doc.get("status") == "PASSED",
+                                "reason": "Bereits durch Dokumentjob committed",
+                                "saved_path": existing_doc.get("beleg_link", ""),
+                                "telegram_msg": "[System] Commit wiederverwendet.",
+                            }
+                            with db_lock:
+                                processed_results.append(res)
+                            return res
+                    raise RuntimeError(
+                        f"Dokumentjob {job_id} wird bereits verarbeitet (Status {job.get('status')})"
+                    )
                     
                 if is_md5_dup:
                     existing_doc = rag_engine.find_beleg_by_md5(md5_hash)
@@ -116,6 +170,12 @@ class ArchivePipeline:
                             f"[Pipeline] Bereits persistenter Teilbeleg {existing_doc['beleg_id']} "
                             f"wird ohne Neuanlage wiederverwendet."
                         )
+                        checkpoint = self.job_adapter.prepare_analysis(job, worker_id)
+                        if checkpoint is None:
+                            self.job_adapter.finish_analysis(job_id, worker_id, existing_doc)
+                        self.job_adapter.begin_persistence(job_id, worker_id)
+                        self._learn_contacts(existing_doc, job_id)
+                        self.job_adapter.commit(job_id, worker_id)
                         res = {
                             "doc": existing_doc,
                             "passed": existing_doc.get("status") == "PASSED",
@@ -142,6 +202,11 @@ class ArchivePipeline:
                     with db_lock:
                         logger.warning(f"[Pipeline] MD5-Dublette erkannt für Beleg {idx}/{total_docs}: {md5_hash}. Überspringe Analyse.")
                         sort_result = self.sorter.sort_and_save_pdf(pdf_path, start, end, doc_data)
+                    checkpoint = self.job_adapter.prepare_analysis(job, worker_id)
+                    if checkpoint is None:
+                        self.job_adapter.finish_analysis(job_id, worker_id, doc_data)
+                    self.job_adapter.begin_persistence(job_id, worker_id)
+                    self.job_adapter.commit(job_id, worker_id)
                         
                     res = {
                         "doc": doc_data,
@@ -155,15 +220,41 @@ class ArchivePipeline:
                     return res
 
                 # 3. Inhaltliche Analyse des Einzeldokuments (LLM Abfrage)
-                doc_pages = [p for p in pages_info if start <= p["page_num"] <= end]
-                doc_data = document_analyzer.analyze_document(doc_pages)
-                doc_data["md5_hash"] = md5_hash
+                checkpoint = self.job_adapter.prepare_analysis(job, worker_id)
+                if checkpoint is None:
+                    doc_pages = [p for p in pages_info if start <= p["page_num"] <= end]
+                    doc_data = document_analyzer.analyze_document(doc_pages)
+                    doc_data["md5_hash"] = md5_hash
+                    passed, reason, enriched_doc = validation_shield.validate_document(doc_data)
+                    self.job_adapter.finish_analysis(job_id, worker_id, enriched_doc)
+                else:
+                    enriched_doc = checkpoint
+                    passed = enriched_doc.get("validation_status") == "PASSED"
+                    reason = enriched_doc.get("validation_reason", "Analysecheckpoint wiederverwendet")
 
-                # 4. Validierung
-                passed, reason, enriched_doc = validation_shield.validate_document(doc_data)
+                # Ein Absturz nach RAG/Wiki, aber vor Job-COMMITTED, darf keine
+                # zweite Datei oder Dashboardzeile erzeugen.
+                existing_doc = rag_engine.find_beleg_by_md5(md5_hash)
+                if existing_doc and rag_engine.verify_beleg_persistence(existing_doc["beleg_id"])["ok"]:
+                    self.job_adapter.begin_persistence(job_id, worker_id)
+                    self._learn_contacts(existing_doc, job_id)
+                    self.job_adapter.commit(job_id, worker_id)
+                    existing_doc["start_seite"] = start
+                    existing_doc["end_seite"] = end
+                    res = {
+                        "doc": existing_doc,
+                        "passed": existing_doc.get("status") == "PASSED",
+                        "reason": "Persistierter Crash-Checkpoint wiederverwendet",
+                        "saved_path": existing_doc.get("beleg_link", ""),
+                        "telegram_msg": "[System] Persistenz ohne Dublette wiederaufgenommen.",
+                    }
+                    with db_lock:
+                        processed_results.append(res)
+                    return res
                 
                 # 5. Thread-sichere Speicherung, sevDesk-Buchung und Telegram-Push
                 with db_lock:
+                    self.job_adapter.begin_persistence(job_id, worker_id)
                     logger.info(f"[Pipeline] [Speicherung] Beleg {idx}/{total_docs} (Seiten {start}-{end}) wird sortiert...")
                     sort_result = self.sorter.sort_and_save_pdf(
                         input_pdf_path=pdf_path,
@@ -172,6 +263,10 @@ class ArchivePipeline:
                         doc_data=enriched_doc
                     )
                     saved_path = sort_result["saved_path"]
+
+                    if enriched_doc.get("persistence_verified") is True:
+                        self._learn_contacts(enriched_doc, job_id)
+                    self.job_adapter.commit(job_id, worker_id)
 
                     # Buchung in sevDesk
                     if (
@@ -195,6 +290,8 @@ class ArchivePipeline:
                     return res
 
             except Exception as e:
+                if job_id:
+                    self.job_adapter.fail(job_id, worker_id, e)
                 logger.error(f"[Pipeline] Fehler bei Beleg {idx}/{total_docs} (Seiten {start}-{end}): {e}")
                 res = {
                     "doc": {"start_seite": start, "end_seite": end, "lieferant": "FEHLER"},

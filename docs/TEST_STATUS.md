@@ -11,7 +11,7 @@ python3 -m pytest -q
 Ergebnis auf macOS mit Python 3.9.6:
 
 ```text
-100 passed, 4 warnings in 3.25s
+112 passed, 4 warnings in 3.21s
 ```
 
 Die vier Warnungen stammen von `urllib3`/LibreSSL und Hinweisen externer
@@ -52,10 +52,25 @@ deshalb folgende Fehler behoben und mit Regressionstests abgesichert:
   frischen Checkout nicht reproduzierbar. Er erzeugt nun eigene Testdaten in einer
   temporären SQLite-Datenbank.
 
+## Pipeline- und Kontakttests
+
+Die Suite wurde zweimal unmittelbar hintereinander ausgeführt; beide Läufe
+bestanden mit 112 Tests. Neue Tests prüfen:
+
+- persistente Analysecheckpoints über eine neue Engine-Instanz hinweg;
+- keine erneute Lease für `COMMITTED`;
+- Checkpoint-Schreibschutz gegen fremde Worker;
+- parallele Kontaktanlage mit genau einer Entität;
+- Normalisierung, starke Identifikatoren und Konfliktfälle;
+- Kunde und Lieferant als Rollen derselben Entität;
+- idempotente Evidenz beim erneuten Verarbeiten desselben Belegs;
+- Wiederverwendung gelernter Aliase bei zukünftigen Dokumenten.
+
 ## Was die Tests noch nicht beweisen
 
-- Fast Lane und Job-Engine sind noch nicht in `ArchivePipeline` verdrahtet.
-- Es gibt noch keinen End-to-End-Crashtest zwischen RAG-, Wiki- und Job-Commit.
+- Fast Lane ist noch nicht in `ArchivePipeline` verdrahtet.
+- Ein echter Prozessabbruch während eines Google-Drive-Netzwerkuploads benötigt
+  zusätzlich einen externen End-to-End-Belastungstest.
 - Die Fast-Lane-Einsparungen sind Schätzungen, noch keine Messungen echter Gemma-Läufe.
 - SQLite-Paralleltests laufen lokal in Threads; mehrere Prozesse und Netzwerk-
   Dateisysteme brauchen einen gesonderten Belastungstest.
@@ -64,7 +79,6 @@ deshalb folgende Fehler behoben und mit Regressionstests abgesichert:
 
 ## Nächste Abnahmekriterien
 
-Vor produktiver Aktivierung der neuen Module müssen ein Pipeline-Adapter,
-atomare/idempotente RAG-Wiki-Commits, Crash-Injection-Tests und ein gemessener
-Fast-Lane-A/B-Benchmark hinzukommen. Bis dahin bleiben die Module vorbereitet,
-aber nicht automatisch aktiv.
+Als nächste Qualitätsstufe folgen ein kontrollierter Prozessabbruchtest mit echten
+Test-PDFs sowie ein gemessener Fast-Lane-A/B-Benchmark. Die Job- und
+Kontaktintegration ist aktiv; Fast Lane bleibt bis zur Messung vorbereitet.

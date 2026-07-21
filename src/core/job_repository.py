@@ -2,6 +2,7 @@ import sqlite3
 import time
 import os
 import threading
+import json
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 
@@ -43,6 +44,7 @@ class JobRepository:
                     last_error TEXT,
                     last_failed_stage TEXT,
                     next_retry_at REAL,
+                    checkpoint_json TEXT,
                     created_at REAL,
                     updated_at REAL,
                     UNIQUE(source_md5, page_start, page_end)
@@ -50,6 +52,9 @@ class JobRepository:
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_status ON document_jobs(status);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_lock ON document_jobs(lock_expires_at);")
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(document_jobs)")}
+            if "checkpoint_json" not in columns:
+                conn.execute("ALTER TABLE document_jobs ADD COLUMN checkpoint_json TEXT")
 
     def create_job(self, job_data: Dict[str, Any]) -> str:
         """
@@ -92,6 +97,26 @@ class JobRepository:
         cursor.execute("SELECT * FROM document_jobs WHERE job_id = ?", (job_id,))
         row = cursor.fetchone()
         return dict(row) if row else None
+
+    def save_checkpoint(self, job_id: str, worker_id: str, data: Dict[str, Any]) -> bool:
+        """Speichert ein JSON-Checkpoint nur unter einer gültigen eigenen Lease."""
+        conn = self._get_connection()
+        now = time.time()
+        payload = json.dumps(data, ensure_ascii=False, sort_keys=True, default=str)
+        with conn:
+            cursor = conn.execute("""
+                UPDATE document_jobs SET checkpoint_json = ?, updated_at = ?
+                WHERE job_id = ? AND locked_by = ? AND lock_expires_at >= ?
+            """, (payload, now, job_id, worker_id, now))
+            return cursor.rowcount > 0
+
+    def load_checkpoint(self, job_id: str) -> Optional[Dict[str, Any]]:
+        row = self._get_connection().execute(
+            "SELECT checkpoint_json FROM document_jobs WHERE job_id = ?", (job_id,)
+        ).fetchone()
+        if not row or not row[0]:
+            return None
+        return json.loads(row[0])
 
     def find_claimable_jobs(self, limit: int = 1) -> List[Dict[str, Any]]:
         conn = self._get_connection()

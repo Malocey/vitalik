@@ -55,8 +55,9 @@ Writes eines abgestürzten Workers.
 
 ## Integration und Teststatus
 
-Die Engine verwendet derzeit eine eigene Datenbank und ist noch nicht in
-`ArchivePipeline`, RAG oder Wiki verdrahtet. Insbesondere ist ein atomarer
-End-to-End-Commit über Jobstatus, RAG und Wiki noch zu implementieren. Die lokalen
-Tests prüfen Leasing und Statuslogik; Ergebnisse und offene Abnahmekriterien stehen
-in [TEST_STATUS.md](TEST_STATUS.md).
+`PipelineJobAdapter` verbindet die Engine mit `ArchivePipeline`. Analyseergebnisse
+werden als JSON-Checkpoint gespeichert. Vor einer erneuten Ablage prüft die
+Pipeline, ob derselbe MD5-Beleg nach einem Absturz bereits vollständig in RAG und
+Wiki persistiert wurde. Erst nach erfolgreicher Persistenz und Kontaktzuordnung
+wird `COMMITTED` gesetzt. Die lokalen Tests prüfen Leasing, Checkpoints,
+Wiederholung und Statuslogik; Ergebnisse stehen in [TEST_STATUS.md](TEST_STATUS.md).

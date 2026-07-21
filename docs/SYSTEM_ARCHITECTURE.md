@@ -23,6 +23,7 @@ PDF/Ordner
   -> deterministische Typ- und Betragserkennung
   -> optionaler LM-Studio-Aufruf mit RAG-Kontext
   -> Validierung und sevDesk-Stammdaten-Zuordnung
+  -> Job-Checkpoint und dublettenfreier Kontaktabgleich
   -> PDF-Ablage
   -> SQLite-FTS5 + Wiki
   -> Persistenzprüfung
@@ -46,7 +47,8 @@ sichere Ordnerlauf liegt in `src/core/process_document_folder.py`.
 | Ordnerlauf | `process_document_folder.py` | Done-Markierung und CSV-Inventar | integriert |
 | Benchmark | `benchmark_document_pipeline.py` | read-only Qualitätsmessung | integriert |
 | Fast Lane | `fast_lane.py` | deterministische Routenentscheidung | getestet, noch nicht verdrahtet |
-| Job-Engine | `document_jobs.py`, `job_repository.py` | Leasing, Retry und Crash-Recovery | getestet, noch nicht verdrahtet |
+| Job-Engine | `document_jobs.py`, `job_repository.py`, `pipeline_job_adapter.py` | Leasing, Retry und Crash-Recovery | integriert |
+| Kontaktgedächtnis | `contact_memory.py` | Kunden/Lieferanten lernen und deduplizieren | integriert |
 
 ## Persistenz und Daten
 
@@ -75,14 +77,20 @@ parallele Anfragen pro Rechner, überspringt vorübergehend fehlerhafte Worker u
 verwendet lokale deterministische Fallbacks, wo dies fachlich sicher möglich ist.
 Details stehen in [lm_studio_cluster.md](lm_studio_cluster.md).
 
-## Neue Integrationsgrenze
+## Job- und Kontaktintegration
+
+Die Job-Engine schützt die Schritte OCR, Analyse sowie RAG/Wiki-Persistenz durch
+Leases und JSON-Checkpoints. Nach einem Absturz wird ein bereits vollständig in
+RAG/Wiki vorhandener Beleg wiederverwendet, bevor eine weitere Datei oder
+Dashboardzeile erzeugt wird. Erst danach erhält der Job `COMMITTED`.
+
+Nach bestätigter Persistenz lernt `ContactMemory` sichere Kunden und Lieferanten.
+Unique-Indizes, normalisierte Identitäten, Aliase und eindeutige Belegevidenz
+verhindern Dubletten. Details stehen in [contact_memory.md](contact_memory.md).
 
 Fast Lane entscheidet künftig vor dem LLM-Aufruf zwischen `FAST_LANE`,
-`TARGETED_LLM`, `FULL_LLM`, `MANUAL_REVIEW` und `REJECTED`. Die Job-Engine soll
-die einzelnen Pipeline-Schritte durch atomare Leases und sichere Checkpoints
-wiederaufnehmbar machen. Beide Module sind absichtlich noch nicht automatisch in
-`ArchivePipeline` eingebaut: Erst ein eigener Integrationsschritt darf das
-Verhalten beim Verschieben, Committen und Wiederanlauf verändern.
+`TARGETED_LLM`, `FULL_LLM`, `MANUAL_REVIEW` und `REJECTED`. Sie ist weiterhin
+nicht produktiv verdrahtet, bis reale A/B-Messungen die Grenzwerte bestätigen.
 
 ## Dokumentationsregel für weitere KI-Sitzungen
 
