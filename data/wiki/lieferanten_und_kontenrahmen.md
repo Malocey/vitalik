@@ -9,4 +9,4 @@
    - SKR03: Konto 4900 (Sonstiger Betriebsbedarf) / SKR04: Konto 6300
 
 ### 🔗 Querverweise
-- [vitalik_persona_und_stil](./vitalik_persona_und_stil.md)
+- [vitali_persona_und_stil](./vitali_persona_und_stil.md)

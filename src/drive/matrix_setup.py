@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Drive-Matrix Setup für VG Delikatessen.
-Initialisiert die Google-Drive-Ordnerstruktur für den Kunden Vitalik Gebel
+Initialisiert die Google-Drive-Ordnerstruktur für den Kunden Vitali Gebel
 und erstellt das Google Sheet Zentral-Dashboard.
 Unterstützt Service Accounts, OAuth 2.0 Desktop-Flow und einen lokalen Mock-Fallback.
 """

@@ -149,7 +149,7 @@ class KarpathyLLMWikiEngine:
                     all_links.add(other.name)
 
         for p in pages:
-            if p.name not in all_links and p.stem not in ["vitalik_persona_und_stil", "lieferanten_und_kontenrahmen"]:
+            if p.name not in all_links and p.stem not in ["vitali_persona_und_stil", "lieferanten_und_kontenrahmen"]:
                 orphans.append(p.name)
 
         report = {
@@ -164,12 +164,12 @@ class KarpathyLLMWikiEngine:
     def initialize_default_wiki(self):
         """Initialisiert Karpathy's LLM-Wiki Standardstruktur."""
         self.create_or_update_page(
-            slug="vitalik_persona_und_stil",
-            title="Vitalik Persona & Schreibstil",
-            content="""### Vitaliks Tonalität & Kommunikationsregeln
+            slug="vitali_persona_und_stil",
+            title="Vitali Persona & Schreibstil",
+            content="""### Vitalis Tonalität & Kommunikationsregeln
 - **Stil**: Direkt, pragmatisch, gastfreundlich, qualitätsbewusst.
 - **Sprachkombination**: Deutsch (Geschäftssprache & Telegram-Kommunikation).
-- **Verknüpfung Privat & Geschäft**: Vitalik führt VG Delikatessen mit persönlicher Passion. Qualität bei Feinkost und Fleisch bestimmt die Lieferantenwahl.
+- **Verknüpfung Privat & Geschäft**: Vitali führt VG Delikatessen mit persönlicher Passion. Qualität bei Feinkost und Fleisch bestimmt die Lieferantenwahl.
 """,
             category="persona"
         )
@@ -185,7 +185,7 @@ class KarpathyLLMWikiEngine:
    - SKR03: Konto 4900 (Sonstiger Betriebsbedarf) / SKR04: Konto 6300
 """,
             category="buchhaltung",
-            cross_links=["vitalik_persona_und_stil"]
+            cross_links=["vitali_persona_und_stil"]
         )
 
         self.create_or_update_page(

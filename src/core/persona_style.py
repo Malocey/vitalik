@@ -1,6 +1,6 @@
 """
-Persona- und Schreibstil-Engine für Vitalik / VG Delikatessen.
-Verknüpft geschäftliche und private Kontextdaten mit Vitaliks individuellem Schreibstil.
+Persona- und Schreibstil-Engine für Vitali / VG Delikatessen.
+Verknüpft geschäftliche und private Kontextdaten mit Vitalis individuellem Schreibstil.
 """
 
 import json
@@ -24,7 +24,7 @@ class PersonaStyleEngine:
                 pass
 
         default_profile = {
-            "name": "Vitalik",
+            "name": "Vitali",
             "unternehmen": "VG Delikatessen",
             "tonalitaet": "Pragmatisch, direkt, qualitätsbewusst, gastfreundlich",
             "schreibstil_merkmale": [
@@ -54,10 +54,10 @@ class PersonaStyleEngine:
     def build_system_prompt(self, task_context: str = "") -> str:
         """
         Baut den maßgeschneiderten System-Prompt für das LLM,
-        inklusive Vitaliks Schreibstil und RAG-Kontext.
+        inklusive Vitalis Schreibstil und RAG-Kontext.
         """
         # Hole relevante RAG-Informationen
-        rag_hits = rag_engine.search(f"Schreibstil Vitalik VG Delikatessen {task_context}", top_k=2)
+        rag_hits = rag_engine.search(f"Schreibstil Vitali VG Delikatessen {task_context}", top_k=2)
         rag_context_str = "\n".join([f"- {h['content']}" for h in rag_hits]) if rag_hits else "Kein zusätzlicher RAG-Kontext."
 
         prompt = f"""Du bist der KI-Betriebsassistent des maßgeschneiderten Betriebssystems von VG Delikatessen.

@@ -7,10 +7,14 @@ import json
 import math
 import os
 import re
+import sqlite3
+import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from config import VECTORSTORE_DIR, TESTDATA_DIR
+from config import VECTORSTORE_DIR, TESTDATA_DIR, DATA_DIR
 from src.core.local_llm_client import LocalLLMClient, default_llm_client
+
+logger = logging.getLogger("RAGEngine")
 
 
 def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
@@ -28,8 +32,86 @@ class RAGEngine:
     def __init__(self, llm_client: Optional[LocalLLMClient] = None):
         self.llm_client = llm_client or default_llm_client
         self.index_file = VECTORSTORE_DIR / "index.json"
+        self.db_path = DATA_DIR / "rag_index.db"
         self.documents: List[Dict[str, Any]] = []
+        self._init_sqlite_db()
         self.load_index()
+
+    def _init_sqlite_db(self):
+        """Initialisiert die SQLite FTS5 Datenbank."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    CREATE VIRTUAL TABLE IF NOT EXISTS belege_fts USING fts5(
+                        beleg_id, lieferant, datum, betrag, rohtext,
+                        tokenize='unicode61'
+                    );
+                """)
+                conn.commit()
+        except Exception as e:
+            logger.error(f"[RAG] Fehler bei der Initialisierung von SQLite FTS5: {e}")
+
+    def index_beleg(self, doc_data: Dict[str, Any], beleg_id: str):
+        """Indiziert einen verarbeiteten Beleg in der SQLite FTS5 Tabelle."""
+        if not doc_data:
+            return
+
+        lieferant = doc_data.get("lieferant", "")
+        datum = doc_data.get("datum", "")
+        betrag = str(doc_data.get("brutto", ""))
+        rohtext = doc_data.get("raw_text", "")
+
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO belege_fts (beleg_id, lieferant, datum, betrag, rohtext)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (beleg_id, lieferant, datum, betrag, rohtext))
+                conn.commit()
+                logger.info(f"[RAG] Beleg {beleg_id} erfolgreich in FTS5 indiziert.")
+        except Exception as e:
+            logger.error(f"[RAG] Fehler beim Indizieren von Beleg {beleg_id} in FTS5: {e}")
+
+    def search_fts(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+        """Führt eine Volltextsuche über die SQLite FTS5 Tabelle aus."""
+        results = []
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+
+                # Bereite die Query für den MATCH-Operator vor (z.B. Wörter aneinanderreihen)
+                # Entferne Sonderzeichen für FTS5
+                clean_query = re.sub(r'[^\w\s]', ' ', query).strip()
+                if not clean_query:
+                    return results
+
+                # Erstelle eine MATCH Query: Jedes Wort wird als Prefix gesucht
+                match_query = ' OR '.join([f'"{word}"*' for word in clean_query.split()])
+
+                cursor.execute("""
+                    SELECT beleg_id, lieferant, datum, betrag, rohtext, rank
+                    FROM belege_fts
+                    WHERE belege_fts MATCH ?
+                    ORDER BY rank
+                    LIMIT ?
+                """, (match_query, top_k))
+
+                for row in cursor.fetchall():
+                    results.append({
+                        "doc_id": row["beleg_id"],
+                        "title": f"Beleg {row['beleg_id']} ({row['datum']}) - {row['lieferant']}",
+                        "content": row["rohtext"],
+                        "source": "fts5",
+                        "category": "beleg",
+                        "score": row["rank"] # Beachte: SQLite rank ist negativ (kleiner ist besser), aber hier nur zur Info
+                    })
+        except Exception as e:
+            logger.error(f"[RAG] Fehler bei FTS5 Volltextsuche: {e}")
+
+        return results
 
     def load_index(self):
         """Lädt den bestehenden Vektorindex aus der JSON-Datei."""
@@ -89,32 +171,45 @@ class RAGEngine:
 
         return chunks if chunks else [text]
 
-    def search(self, query: str, top_k: int = 3, category_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+    def search(self, query: str, top_k: int = 3, category_filter: Optional[str] = None, use_fts: bool = True) -> List[Dict[str, Any]]:
         """
         Führt eine semantische Ähnlichkeitssuche für eine Anforderung/Frage aus.
+        Wenn use_fts True ist, werden auch SQLite FTS5 Ergebnisse gesucht.
         """
-        if not self.documents:
-            return []
-
-        query_embedding = self.llm_client.generate_embedding(query)
         results = []
 
-        for doc in self.documents:
-            if category_filter and doc.get("category") != category_filter:
-                continue
+        # 1. FTS5 Suche für schnelle Beleg-Treffer
+        if use_fts and (not category_filter or category_filter == "beleg"):
+            fts_results = self.search_fts(query, top_k)
+            results.extend(fts_results)
 
-            sim = cosine_similarity(query_embedding, doc.get("embedding", []))
-            results.append({
-                "doc_id": doc.get("doc_id"),
-                "title": doc.get("title"),
-                "content": doc.get("content"),
-                "source": doc.get("source"),
-                "category": doc.get("category"),
-                "score": round(sim, 4)
-            })
+        # 2. Vektor-Suche (falls Dokumente vorhanden)
+        if self.documents:
+            query_embedding = self.llm_client.generate_embedding(query)
+            vec_results = []
 
-        results.sort(key=lambda x: x["score"], reverse=True)
-        return results[:top_k]
+            for doc in self.documents:
+                if category_filter and doc.get("category") != category_filter:
+                    continue
+
+                sim = cosine_similarity(query_embedding, doc.get("embedding", []))
+                # Nur relevante Treffer behalten
+                if sim > 0.3:
+                    vec_results.append({
+                        "doc_id": doc.get("doc_id"),
+                        "title": doc.get("title"),
+                        "content": doc.get("content"),
+                        "source": doc.get("source"),
+                        "category": doc.get("category"),
+                        "score": round(sim, 4)
+                    })
+
+            vec_results.sort(key=lambda x: x["score"], reverse=True)
+            results.extend(vec_results[:top_k])
+
+        # Optional: Ergebnisse mischen/sortieren, aber hier belassen wir es einfach bei der kombinierten Liste
+        # FTS-Ergebnisse sind oft präziser bei exakten Suchen, daher stehen sie vorne
+        return results[:max(top_k, len(results))] # Begrenzung auf alle gefundenen, wenn nicht explizit gefiltert
 
     def ingest_directory(self, dir_path: Path):
         """Indexiert alle Text-, Markdown- und JSON-Dateien in einem Verzeichnis."""

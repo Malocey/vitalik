@@ -59,10 +59,18 @@ class MockTelegramBot:
 
     def send_approval_request(self, doc_data: Dict[str, Any]) -> str:
         """
-        Formatiert eine Telegram-Nachricht im Schreibstil von Vitalik mit Inline-Buttons.
+        Formatiert eine Telegram-Nachricht im Schreibstil von Vitali mit Inline-Buttons.
         """
-        lieferant = doc_data.get("lieferant")
-        brutto = doc_data.get("brutto")
+        lieferant = doc_data.get("lieferant", "Unbekannt")
+        brutto = doc_data.get("brutto", 0.0)
+        netto = doc_data.get("netto", 0.0)
+        steuer = doc_data.get("steuer", 0.0)
+
+        # Sicherstellen, dass Werte nicht None sind für die Formatierung
+        brutto = 0.0 if brutto is None else brutto
+        netto = 0.0 if netto is None else netto
+        steuer = 0.0 if steuer is None else steuer
+
         skr = doc_data.get("skr03_konto", "3400")
         reason = doc_data.get("validation_reason", "")
 
@@ -70,10 +78,10 @@ class MockTelegramBot:
 
 Neuer Beleg erfasst:
 - Lieferant: {lieferant}
-- Datum: {doc_data.get('datum')}
-- Brutto: {brutto:.2f} EUR (Netto: {doc_data.get('netto'):.2f} EUR, USt: {doc_data.get('steuer'):.2f} EUR)
+- Datum: {doc_data.get('datum', 'Unbekannt')}
+- Brutto: {brutto:.2f} EUR (Netto: {netto:.2f} EUR, USt: {steuer:.2f} EUR)
 - Soll-Konto (SKR03): {skr}
-- Status: {doc_data.get('validation_status')} ({reason})
+- Status: {doc_data.get('validation_status', 'UNKNOWN')} ({reason})
 
 Aktion waehlen:
 [ 1 ] Bestaetigen & in sevDesk buchen
