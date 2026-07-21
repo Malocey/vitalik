@@ -31,5 +31,6 @@ data/mock_storage/
 data/vectorstore/
 data/checkpoint.json
 data/wiki/beleg_*.md
+!data/wiki/beleg_pipeline_anleitung.md
 data/wiki/entities/
 data/wiki/query_*.md
