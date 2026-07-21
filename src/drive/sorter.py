@@ -26,6 +26,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 from src.core.config import MOCK_DRIVE_DIR
 from src.parser.pdf_engine import pdf_engine
 from src.drive.matrix_setup import GERMAN_MONTHS, authenticate_google_apis, find_or_create_folder
+from src.core.rag_engine import rag_engine
 
 logger = logging.getLogger("DriveSorter")
 
@@ -36,6 +37,81 @@ try:
     HAS_GOOGLE_LIBS = True
 except ImportError:
     HAS_GOOGLE_LIBS = False
+
+
+def determine_destination_folder(doc_data: Dict[str, Any]) -> str:
+    """
+    Bestimmt den Zielpfad basierend auf Business vs. Privat/Familie Logik.
+    """
+    text = doc_data.get("raw_text", "").lower()
+    lieferant = doc_data.get("lieferant", "").lower()
+
+    # 1. Geschäftlich (Business-Match)
+    business_keywords = ["world wide food", "rv impex", "jensmann"]
+    is_business = False
+    for kw in business_keywords:
+        if kw in text or kw in lieferant:
+            is_business = True
+            break
+
+    if is_business:
+        datum_str = doc_data.get("datum", datetime.datetime.now().strftime("%Y-%m-%d"))
+        try:
+            dt = datetime.datetime.strptime(datum_str, "%Y-%m-%d")
+            year_str = str(dt.year)
+            month_str = GERMAN_MONTHS.get(dt.month, f"{dt.month:02d}_Monat")
+        except Exception:
+            year_str = datetime.datetime.now().strftime("%Y")
+            month_str = GERMAN_MONTHS.get(datetime.datetime.now().month, "00_Monat")
+
+        belegtyp = doc_data.get("belegtyp", "Sonstiges")
+        belegtyp_folder_map = {
+            "Rechnung": "Rechnungen",
+            "Angebot": "Angebote",
+            "Lieferschein": "Lieferscheine",
+            "Auftragsbestaetigung": "Auftragsbestaetigungen",
+            "Mahnung": "Mahnungen",
+            "Sonstiges": "Sonstiges"
+        }
+        beleg_subfolder = belegtyp_folder_map.get(belegtyp, "Sonstiges")
+        return f"01_Eingangsarchiv/{year_str}/{month_str}/{beleg_subfolder}"
+
+    # 2. Privat & Familie (Personen-Match)
+    # Suche nach "<Vorname> Gebel"
+    match = re.search(r"\b([a-zA-ZäöüÄÖÜß]+)\s+gebel\b", text)
+    if match:
+        vorname = match.group(1).capitalize()
+        datum_str = doc_data.get("datum", datetime.datetime.now().strftime("%Y-%m-%d"))
+        try:
+            dt = datetime.datetime.strptime(datum_str, "%Y-%m-%d")
+            year_str = str(dt.year)
+        except Exception:
+            year_str = datetime.datetime.now().strftime("%Y")
+
+        return f"05_Privat_Familie/{vorname}_Gebel/{year_str}"
+
+    # 3. Fallback, wenn nichts greift und es eigentlich "PASSED" war,
+    # gehen wir standardmäßig ins Firmenarchiv
+    datum_str = doc_data.get("datum", datetime.datetime.now().strftime("%Y-%m-%d"))
+    try:
+        dt = datetime.datetime.strptime(datum_str, "%Y-%m-%d")
+        year_str = str(dt.year)
+        month_str = GERMAN_MONTHS.get(dt.month, f"{dt.month:02d}_Monat")
+    except Exception:
+        year_str = datetime.datetime.now().strftime("%Y")
+        month_str = GERMAN_MONTHS.get(datetime.datetime.now().month, "00_Monat")
+
+    belegtyp = doc_data.get("belegtyp", "Sonstiges")
+    belegtyp_folder_map = {
+        "Rechnung": "Rechnungen",
+        "Angebot": "Angebote",
+        "Lieferschein": "Lieferscheine",
+        "Auftragsbestaetigung": "Auftragsbestaetigungen",
+        "Mahnung": "Mahnungen",
+        "Sonstiges": "Sonstiges"
+    }
+    beleg_subfolder = belegtyp_folder_map.get(belegtyp, "Sonstiges")
+    return f"01_Eingangsarchiv/{year_str}/{month_str}/{beleg_subfolder}"
 
 
 def generate_standardized_filename(doc_data: Dict[str, Any]) -> Tuple[str, bool]:
@@ -278,34 +354,14 @@ class DriveSorter:
         root_path.mkdir(parents=True, exist_ok=True)
 
         if is_metadata_dup:
-            target_dir = root_path / "04_Pruefung_Erforderlich" / "DUBLITTEN"
             dest_folder_name = "04_Pruefung_Erforderlich/DUBLITTEN"
+            target_dir = root_path / "04_Pruefung_Erforderlich" / "DUBLITTEN"
         elif passed:
-            datum_str = doc_data.get("datum", datetime.datetime.now().strftime("%Y-%m-%d"))
-            try:
-                dt = datetime.datetime.strptime(datum_str, "%Y-%m-%d")
-                year_str = str(dt.year)
-                month_str = GERMAN_MONTHS.get(dt.month, f"{dt.month:02d}_Monat")
-            except Exception:
-                year_str = datetime.datetime.now().strftime("%Y")
-                month_str = GERMAN_MONTHS.get(datetime.datetime.now().month, "00_Monat")
-
-            belegtyp = doc_data.get("belegtyp", "Sonstiges")
-            belegtyp_folder_map = {
-                "Rechnung": "Rechnungen",
-                "Angebot": "Angebote",
-                "Lieferschein": "Lieferscheine",
-                "Auftragsbestaetigung": "Auftragsbestaetigungen",
-                "Mahnung": "Mahnungen",
-                "Sonstiges": "Sonstiges"
-            }
-            beleg_subfolder = belegtyp_folder_map.get(belegtyp, "Sonstiges")
-
-            target_dir = root_path / "01_Eingangsarchiv" / year_str / month_str / beleg_subfolder
-            dest_folder_name = f"01_Eingangsarchiv/{year_str}/{month_str}/{beleg_subfolder}"
+            dest_folder_name = determine_destination_folder(doc_data)
+            target_dir = root_path / Path(dest_folder_name)
         else:
-            target_dir = root_path / "04_Pruefung_Erforderlich"
             dest_folder_name = "04_Pruefung_Erforderlich"
+            target_dir = root_path / "04_Pruefung_Erforderlich"
 
         target_dir.mkdir(parents=True, exist_ok=True)
         target_path = target_dir / filename
@@ -315,6 +371,9 @@ class DriveSorter:
 
         beleg_id = self._update_dashboard_mock(root_path, doc_data, target_path)
         doc_data["beleg_id"] = beleg_id
+
+        # In FTS5 indizieren
+        rag_engine.index_beleg(doc_data, beleg_id)
 
         return {
             "saved_path": str(target_path),
@@ -340,31 +399,12 @@ class DriveSorter:
                 target_folder_id = find_or_create_folder(self.drive_service, "DUBLITTEN", parent_id=pruefung_id)
                 dest_folder_name = "04_Pruefung_Erforderlich/DUBLITTEN"
             elif passed:
-                datum_str = doc_data.get("datum", datetime.datetime.now().strftime("%Y-%m-%d"))
-                try:
-                    dt = datetime.datetime.strptime(datum_str, "%Y-%m-%d")
-                    year_str = str(dt.year)
-                    month_str = GERMAN_MONTHS.get(dt.month, f"{dt.month:02d}_Monat")
-                except Exception:
-                    year_str = datetime.datetime.now().strftime("%Y")
-                    month_str = GERMAN_MONTHS.get(datetime.datetime.now().month, "00_Monat")
-
-                belegtyp = doc_data.get("belegtyp", "Sonstiges")
-                belegtyp_folder_map = {
-                    "Rechnung": "Rechnungen",
-                    "Angebot": "Angebote",
-                    "Lieferschein": "Lieferscheine",
-                    "Auftragsbestaetigung": "Auftragsbestaetigungen",
-                    "Mahnung": "Mahnungen",
-                    "Sonstiges": "Sonstiges"
-                }
-                beleg_subfolder = belegtyp_folder_map.get(belegtyp, "Sonstiges")
-
-                archiv_id = find_or_create_folder(self.drive_service, "01_Eingangsarchiv", parent_id=root_id)
-                year_id = find_or_create_folder(self.drive_service, year_str, parent_id=archiv_id)
-                month_id = find_or_create_folder(self.drive_service, month_str, parent_id=year_id)
-                target_folder_id = find_or_create_folder(self.drive_service, beleg_subfolder, parent_id=month_id)
-                dest_folder_name = f"01_Eingangsarchiv/{year_str}/{month_str}/{beleg_subfolder}"
+                dest_folder_name = determine_destination_folder(doc_data)
+                parts = dest_folder_name.split("/")
+                current_parent_id = root_id
+                for part in parts:
+                    current_parent_id = find_or_create_folder(self.drive_service, part, parent_id=current_parent_id)
+                target_folder_id = current_parent_id
             else:
                 target_folder_id = find_or_create_folder(self.drive_service, "04_Pruefung_Erforderlich", parent_id=root_id)
                 dest_folder_name = "04_Pruefung_Erforderlich"
@@ -393,6 +433,9 @@ class DriveSorter:
 
             beleg_id = self._update_dashboard_real(root_id, doc_data, web_view_link)
             doc_data["beleg_id"] = beleg_id
+
+            # In FTS5 indizieren
+            rag_engine.index_beleg(doc_data, beleg_id)
 
             return {
                 "saved_path": web_view_link,
