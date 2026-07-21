@@ -148,12 +148,21 @@ async def post_rag(request: QueryRequest):
     user_prompt = f"Basierend auf folgendem Wissensstand:\n{rag_context}\n\nFrage: {query}"
     
     answer = default_llm_client.generate_completion(user_prompt, system_prompt=system_prompt)
-    karpathy_wiki.log_event("QUERY", f"RAG-Abfrage: '{query[:40]}'")
+    
+    # Automatisch ins Wiki speichern für Gedächtniserweiterung
+    try:
+        saved_path = karpathy_wiki.save_compounding_answer(query, answer)
+        logger.info(f"[RAG-Memory] Antwort automatisch gespeichert: {saved_path}")
+    except Exception as e:
+        logger.warning(f"[RAG-Memory] Fehler beim Speichern der Antwort: {e}")
+    
+    karpathy_wiki.log_event("QUERY", f"RAG-Abfrage: '{query[:40]}' → Antwort im Wiki gespeichert")
 
     return {
         "query": query,
         "answer": answer,
-        "retrieved_chunks": results
+        "retrieved_chunks": results,
+        "memory_saved": True
     }
 
 @app.post("/api/scan-directory")
