@@ -578,9 +578,119 @@
         </div>
     </div>
 
+    <!-- Advanced Feature Panels: Matching & Inflation Monitor -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px;">
+        <!-- Matching Engine Panel -->
+        <div class="panel">
+            <div class="panel-title">
+                <span>📑</span> Lieferschein & Rechnungs-Abgleich (Matching)
+            </div>
+            <div id="matching-summary" style="font-size: 13px; color: #a5b4fc; font-weight: 600;">
+                Lade Abgleich-Ergebnisse...
+            </div>
+            <div style="max-height: 220px; overflow-y: auto; background: rgba(15, 23, 42, 0.6); border-radius: 12px; padding: 10px;">
+                <table class="table-results" style="width: 100%; font-size: 12px;">
+                    <thead>
+                        <tr>
+                            <th>Rechnung</th>
+                            <th>Lieferschein</th>
+                            <th>Lieferant</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="matching-table-body">
+                        <tr><td colspan="4" style="text-align: center; color: #94a3b8;">Keine Beleg-Matches vorhanden.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Price Inflation Monitor Panel -->
+        <div class="panel">
+            <div class="panel-title">
+                <span>📈</span> Lieferanten-Preisentwicklung & Inflations-Monitor
+            </div>
+            <div id="price-summary" style="font-size: 13px; color: #f59e0b; font-weight: 600;">
+                Lade Preistrends...
+            </div>
+            <div style="max-height: 220px; overflow-y: auto; background: rgba(15, 23, 42, 0.6); border-radius: 12px; padding: 10px;">
+                <table class="table-results" style="width: 100%; font-size: 12px;">
+                    <thead>
+                        <tr>
+                            <th>Artikel</th>
+                            <th>Lieferant</th>
+                            <th>Preis (Alt ➔ Neu)</th>
+                            <th>Trend %</th>
+                        </tr>
+                    </thead>
+                    <tbody id="price-table-body">
+                        <tr><td colspan="4" style="text-align: center; color: #94a3b8;">Keine Preishistorie vorhanden. Scan ausführen!</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <script>
         let lastQuery = '';
         let lastAnswer = '';
+
+        async function loadMatching() {
+            try {
+                const res = await fetch('/api/matching');
+                const data = await res.json();
+                const summaryDiv = document.getElementById('matching-summary');
+                const tbody = document.getElementById('matching-table-body');
+                if (data.status === 'success') {
+                    summaryDiv.innerText = `Abgeglichene Belege: ${data.total_matches || 0}`;
+                    tbody.innerHTML = '';
+                    if (data.matches && data.matches.length > 0) {
+                        data.matches.forEach(m => {
+                            const tr = document.createElement('tr');
+                            const statusColor = m.match_status === 'MATCHED' ? 'status-passed' : 'status-review';
+                            tr.innerHTML = `
+                                <td>${m.invoice_id}</td>
+                                <td>${m.delivery_note_id || '-'}</td>
+                                <td>${m.supplier_name}</td>
+                                <td><span class="status-pill ${statusColor}">${m.match_status}</span></td>
+                            `;
+                            tbody.appendChild(tr);
+                        });
+                    } else {
+                        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #94a3b8;">Keine Rechnungen/Lieferscheine abgeglichen.</td></tr>';
+                    }
+                }
+            } catch (e) {}
+        }
+
+        async function loadPriceTrends() {
+            try {
+                const res = await fetch('/api/price-trends');
+                const data = await res.json();
+                const summaryDiv = document.getElementById('price-summary');
+                const tbody = document.getElementById('price-table-body');
+                if (data.status === 'success') {
+                    summaryDiv.innerText = `Verfolgte Artikel: ${data.total_items || 0} | Preiserhöhungs-Warnungen: ${data.warnings_count || 0}`;
+                    tbody.innerHTML = '';
+                    if (data.trends && data.trends.length > 0) {
+                        data.trends.forEach(t => {
+                            const tr = document.createElement('tr');
+                            const isIncrease = t.change_pct > 2.0;
+                            const pillClass = isIncrease ? 'status-review' : 'status-passed';
+                            tr.innerHTML = `
+                                <td><strong>${t.item_name}</strong></td>
+                                <td>${t.supplier_name}</td>
+                                <td>${t.oldest_price.toFixed(2)}€ ➔ ${t.latest_price.toFixed(2)}€ / ${t.unit_name}</td>
+                                <td><span class="status-pill ${pillClass}">${t.change_pct > 0 ? '+' : ''}${t.change_pct}%</span></td>
+                            `;
+                            tbody.appendChild(tr);
+                        });
+                    } else {
+                        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #94a3b8;">Keine Preistrends erfasst. Excel/Rechnung scannen!</td></tr>';
+                    }
+                }
+            } catch (e) {}
+        }
 
         async function loadStats() {
             try {
@@ -850,6 +960,8 @@
         loadStats();
         loadJobs();
         loadContacts();
+        loadMatching();
+        loadPriceTrends();
         loadWikiPages();
         loadIndexAndLog();
         runRAGSearch();

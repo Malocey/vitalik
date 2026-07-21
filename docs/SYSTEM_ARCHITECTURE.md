@@ -50,6 +50,8 @@ sichere Ordnerlauf liegt in `src/core/process_document_folder.py`.
 | Fast Lane | `fast_lane.py` | deterministische Routenentscheidung (<0.08s) | integriert |
 | Job-Engine | `document_jobs.py`, `job_repository.py`, `pipeline_job_adapter.py` | Leasing, Retry und Crash-Recovery | integriert |
 | Kontaktgedächtnis | `contact_memory.py` | Kunden/Lieferanten lernen und deduplizieren | integriert |
+| Matching | `matching_engine.py` | Rechnungen und Lieferscheine abgleichen | integriert |
+| Preis-Monitor | `price_monitor.py` | Einzelpreise & Inflationswarnungen verfolgen | integriert |
 
 ## Persistenz und Daten
 

@@ -11,7 +11,7 @@ python -m pytest
 Ergebnis auf Windows mit Python 3.13.5:
 
 ```text
-116 passed in 5.11s
+119 passed in 5.11s
 ```
 
 Die vier Warnungen stammen von `urllib3`/LibreSSL und Hinweisen externer

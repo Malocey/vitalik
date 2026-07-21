@@ -156,6 +156,26 @@ async def get_fast_lane_stats():
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+from src.core.matching_engine import matching_engine
+from src.core.price_monitor import price_monitor
+
+@app.get("/api/matching")
+async def get_matching():
+    try:
+        matches = matching_engine.get_all_matches()
+        return {"status": "success", "total_matches": len(matches), "matches": matches}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "matches": []}
+
+@app.get("/api/price-trends")
+async def get_price_trends():
+    try:
+        trends = price_monitor.get_price_trends()
+        warnings_count = sum(1 for t in trends if t.get("status") == "PREISERHOEHUNG_WARNUNG")
+        return {"status": "success", "total_items": len(trends), "warnings_count": warnings_count, "trends": trends}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "trends": []}
+
 @app.get("/api/wiki")
 async def get_wiki():
     pages = []
