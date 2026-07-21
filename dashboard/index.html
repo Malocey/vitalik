@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VG Delikatessen - Ordner-Scanner & RAG Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #090d16;
+            --card-bg: rgba(22, 30, 49, 0.75);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --accent-purple: #6366f1;
+            --accent-blue: #3b82f6;
+            --accent-emerald: #10b981;
+            --accent-amber: #f59e0b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-dark);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(59, 130, 246, 0.12) 0px, transparent 50%);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 24px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 28px;
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 18px;
+            margin-bottom: 24px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+
+        .brand-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 26px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #a5b4fc 0%, #6366f1 50%, #38bdf8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 9999px;
+            color: #34d399;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .pulse-dot {
+            width: 8px;
+            height: 8px;
+            background-color: #10b981;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #10b981;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 18px 22px;
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(99, 102, 241, 0.4);
+        }
+
+        .stat-label {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+
+        .stat-val {
+            font-family: 'Outfit', sans-serif;
+            font-size: 24px;
+            font-weight: 700;
+            color: #ffffff;
+        }
+
+        .scanner-panel {
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.85) 0%, rgba(15, 23, 42, 0.95) 100%);
+            border: 1px solid rgba(99, 102, 241, 0.35);
+            border-radius: 20px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 12px 20px -5px rgba(0,0,0,0.4);
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .source-selector {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .source-btn {
+            padding: 10px 18px;
+            border-radius: 12px;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid var(--card-border);
+            color: var(--text-muted);
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .source-btn.active {
+            background: rgba(99, 102, 241, 0.25);
+            border-color: var(--accent-purple);
+            color: #a5b4fc;
+        }
+
+        .source-btn.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+
+        @media (max-width: 1024px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+        }
+
+        .panel-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 18px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #f1f5f9;
+        }
+
+        .search-box {
+            display: flex;
+            gap: 12px;
+        }
+
+        input[type="text"], textarea {
+            width: 100%;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 12px;
+            padding: 14px 18px;
+            color: #ffffff;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        input[type="text"]:focus, textarea:focus {
+            border-color: var(--accent-purple);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+        }
+
+        button {
+            background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 14px 22px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        button:hover {
+            opacity: 0.92;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);
+        }
+
+        .rag-results-area {
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            padding: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            min-height: 140px;
+        }
+
+        .chunk-card {
+            background: rgba(30, 41, 59, 0.6);
+            border-left: 4px solid var(--accent-purple);
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-size: 13px;
+        }
+
+        .chunk-header {
+            display: flex;
+            justify-content: space-between;
+            font-weight: 600;
+            color: #a5b4fc;
+            margin-bottom: 6px;
+        }
+
+        .score-pill {
+            background: rgba(99, 102, 241, 0.2);
+            color: #c7d2fe;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+        }
+
+        .response-box {
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            border-radius: 14px;
+            padding: 18px;
+            line-height: 1.6;
+            font-size: 14px;
+            color: #e2e8f0;
+        }
+
+        .wiki-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 280px;
+            overflow-y: auto;
+        }
+
+        .wiki-item {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .wiki-item:hover {
+            border-color: var(--accent-blue);
+            background: rgba(30, 41, 59, 0.8);
+        }
+
+        .wiki-title {
+            font-weight: 600;
+            color: #38bdf8;
+            margin-bottom: 4px;
+        }
+
+        .wiki-snippet {
+            font-size: 12px;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .telegram-preview {
+            background: rgba(15, 23, 42, 0.95);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 16px;
+            padding: 20px;
+            font-family: monospace;
+            font-size: 13px;
+            color: #93c5fd;
+            white-space: pre-wrap;
+        }
+
+        .tab-bar {
+            display: flex;
+            gap: 8px;
+            border-bottom: 1px solid var(--card-border);
+            padding-bottom: 12px;
+            flex-wrap: wrap;
+        }
+
+        .tab {
+            padding: 8px 14px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .tab.active {
+            background: rgba(99, 102, 241, 0.2);
+            color: #a5b4fc;
+        }
+
+        .table-results {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            margin-top: 10px;
+        }
+
+        .table-results th, .table-results td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .table-results th {
+            color: #a5b4fc;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <div class="header">
+        <div class="brand-title">
+            <span>🥩</span> VG Delikatessen - Ordner-Scanner & RAG System
+        </div>
+        <div style="display: flex; gap: 16px; align-items: center;">
+            <a href="/" style="color: #f8fafc; text-decoration: none; font-weight: 600; font-size: 14px; padding: 8px 16px; background: rgba(99, 102, 241, 0.15); border-radius: 10px; border: 1px solid rgba(99, 102, 241, 0.3); transition: all 0.2s;">🏠 Dashboard</a>
+            <a href="/rag" style="color: #94a3b8; text-decoration: none; font-weight: 600; font-size: 14px; padding: 8px 16px; background: rgba(255, 255, 255, 0.03); border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.05); transition: all 0.2s;" onmouseover="this.style.color='#f8fafc'; this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.color='#94a3b8'; this.style.background='rgba(255,255,255,0.03)'">🔍 RAG Playground</a>
+            <a href="/wiki-graph" style="color: #94a3b8; text-decoration: none; font-weight: 600; font-size: 14px; padding: 8px 16px; background: rgba(255, 255, 255, 0.03); border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.05); transition: all 0.2s;" onmouseover="this.style.color='#f8fafc'; this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.color='#94a3b8'; this.style.background='rgba(255,255,255,0.03)'">🕸️ Wiki Graph</a>
+        </div>
+        <div class="status-badge">
+            <span class="pulse-dot"></span>
+            <span>Local System Active</span>
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-label">RAG Vektor-Dokumente</div>
+            <div class="stat-val" id="stat-docs">--</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Wiki Wissens-Seiten</div>
+            <div class="stat-val" id="stat-wiki">--</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Personalisierter Schreibstil</div>
+            <div class="stat-val" id="stat-persona">Vitalik</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Verzeichnis-Scanner</div>
+            <div class="stat-val" style="font-size: 16px; color: #10b981;">Lokale Pfade Bereit</div>
+        </div>
+    </div>
+
+    <!-- TOP PANEL: Dynamic Directory & Source Scanner -->
+    <div class="scanner-panel">
+        <div class="panel-title">
+            <span>📁</span> Verzeichnis & Quellen-Scanner (Belege, Scans, Mails)
+        </div>
+
+        <div class="source-selector">
+            <div class="source-btn active" id="src-local" onclick="selectSource('local')">📁 Lokaler Ordner / Laufwerk</div>
+            <div class="source-btn disabled" title="Später nach Token-Hinterlegung aktivierbar">☁️ Google Drive (Vorbereitet)</div>
+            <div class="source-btn disabled" title="Später nach IMAP/Gmail Token aktivierbar">✉️ Google Mail / Gmail (Vorbereitet)</div>
+        </div>
+
+        <div class="search-box">
+            <input type="text" id="dir-input" placeholder="Geben Sie den Pfad des Ordners ein..." value="c:\Users\gdami\Documents\AI_labs\vita\data\testdata">
+            <button onclick="scanDirectory()" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); min-width: 240px;">
+                🚀 Ordner scannen & im RAG indexieren
+            </button>
+        </div>
+
+        <div id="scanner-progress" style="display: none; color: #38bdf8; font-size: 13px;">
+            Führe lokale OCR, Grenzerkennung, RAG-Indexierung und 3-Stufen Schutzschild aus...
+        </div>
+
+        <div id="scanner-results-box" style="display: none; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 14px; padding: 18px;">
+            <div id="scan-summary-text" style="font-weight: 600; color: #34d399; margin-bottom: 10px;"></div>
+            <table class="table-results">
+                <thead>
+                    <tr>
+                        <th>Datei</th>
+                        <th>Lieferant</th>
+                        <th>Brutto</th>
+                        <th>SKR03</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="scan-table-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Main Dashboard Grid -->
+    <div class="dashboard-grid">
+        
+        <!-- Left Panel: RAG Search & Synthesizer -->
+        <div class="panel">
+            <div class="panel-title">
+                <span>🧠</span> RAG-Suche & Compounding Knowledge Generator
+            </div>
+            
+            <div class="search-box">
+                <input type="text" id="rag-input" placeholder="Z. B.: Welche Konten nutzen wir für Fleischwaren?" value="Welche Konten nutzen wir für Fleischwaren?">
+                <button onclick="runRAGSearch()">Abfragen</button>
+            </div>
+
+            <div class="stat-label">Retrieved RAG Chunks (Cosine Similarity Match):</div>
+            <div class="rag-results-area" id="rag-chunks">
+                <div style="color: var(--text-muted); font-size: 13px;">Geben Sie eine Frage ein...</div>
+            </div>
+
+            <div class="stat-label">Generierte Antwort (im Schreibstil von Vitalik):</div>
+            <div class="response-box" id="rag-response">
+                Die Antwort wird hier live angezeigt...
+            </div>
+
+            <button onclick="saveAnswerToWiki()" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: #000; font-weight: 700;">
+                💾 [Karpathy Pattern]: Erkenntnis dauerhaft ins Wiki speichern
+            </button>
+            <div id="save-wiki-status" style="font-size: 13px; color: var(--accent-emerald);"></div>
+        </div>
+
+        <!-- Right Panel: Knowledge Wiki & Index -->
+        <div class="panel">
+            <div class="tab-bar">
+                <div class="tab active" onclick="switchTab('wiki')">📖 LLM-Wiki</div>
+                <div class="tab" onclick="switchTab('index')">📑 index.md</div>
+                <div class="tab" onclick="switchTab('log')">📜 log.md</div>
+                <div class="tab" onclick="switchTab('lint')">🧹 Wiki Lint</div>
+            </div>
+
+            <!-- Tab 1: Wiki Browser -->
+            <div id="tab-wiki" class="tab-content">
+                <div class="wiki-list" id="wiki-pages-container">
+                    <div style="color: var(--text-muted); font-size: 13px;">Lade Wiki-Seiten...</div>
+                </div>
+            </div>
+
+            <!-- Tab 2: index.md Viewer -->
+            <div id="tab-index" class="tab-content" style="display: none;">
+                <div class="telegram-preview" id="index-md-content" style="color: #a5b4fc;">Lade index.md...</div>
+            </div>
+
+            <!-- Tab 3: log.md Viewer -->
+            <div id="tab-log" class="tab-content" style="display: none;">
+                <div class="telegram-preview" id="log-md-content" style="color: #fde68a;">Lade log.md...</div>
+            </div>
+
+            <!-- Tab 4: Lint Pass -->
+            <div id="tab-lint" class="tab-content" style="display: none; flex-direction: column; gap: 14px;">
+                <div class="stat-label">Führen Sie einen Karpathy Wiki-Health Check durch:</div>
+                <button onclick="runWikiLint()" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);">
+                    🔍 Wiki Linting Pass starten
+                </button>
+                <div id="lint-report-box" class="telegram-preview" style="display: none; color: #6ee7b7;"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        let lastQuery = '';
+        let lastAnswer = '';
+
+        async function loadStats() {
+            try {
+                const res = await fetch('/api/stats');
+                const data = await res.json();
+                document.getElementById('stat-docs').innerText = data.vector_documents_count;
+                document.getElementById('stat-wiki').innerText = data.wiki_pages_count;
+                document.getElementById('stat-persona').innerText = data.persona_name + " (" + data.unternehmen + ")";
+            } catch (e) {}
+        }
+
+        async function loadWikiPages() {
+            try {
+                const res = await fetch('/api/wiki');
+                const data = await res.json();
+                const container = document.getElementById('wiki-pages-container');
+                container.innerHTML = '';
+
+                data.pages.forEach(page => {
+                    const div = document.createElement('div');
+                    div.className = 'wiki-item';
+                    div.innerHTML = `
+                        <div class="wiki-title">${page.title}</div>
+                        <div class="wiki-snippet">${page.content.substring(0, 120)}...</div>
+                    `;
+                    div.onclick = () => alert(`--- ${page.title} ---\n\n${page.content}`);
+                    container.appendChild(div);
+                });
+            } catch (e) {}
+        }
+
+        async function loadIndexAndLog() {
+            try {
+                const resIndex = await fetch('/api/wiki/index');
+                const dataIndex = await resIndex.json();
+                document.getElementById('index-md-content').innerText = dataIndex.content;
+
+                const resLog = await fetch('/api/wiki/log');
+                const dataLog = await resLog.json();
+                document.getElementById('log-md-content').innerText = dataLog.content;
+            } catch (e) {}
+        }
+
+        async function scanDirectory() {
+            const dirPath = document.getElementById('dir-input').value;
+            const progress = document.getElementById('scanner-progress');
+            const resultsBox = document.getElementById('scanner-results-box');
+            const summaryText = document.getElementById('scan-summary-text');
+            const tableBody = document.getElementById('scan-table-body');
+
+            progress.style.display = 'block';
+            resultsBox.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/scan-directory', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ directory_path: dirPath })
+                });
+                const data = await res.json();
+                progress.style.display = 'none';
+                resultsBox.style.display = 'block';
+
+                if (data.status === 'success') {
+                    summaryText.innerText = `✅ Scan erfolgreich: ${data.total_files} Datei(en) in '${data.scanned_directory}' gescannt, geprüft und im RAG-Wiki indexiert!`;
+                    tableBody.innerHTML = '';
+                    data.results.forEach(item => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td>${item.filename}</td>
+                            <td>${item.lieferant}</td>
+                            <td>${item.brutto.toFixed(2)} €</td>
+                            <td>${item.skr03}</td>
+                            <td style="color: ${item.validation_status === 'PASSED' ? '#10b981' : '#ef4444'}">${item.validation_status}</td>
+                        `;
+                        tableBody.appendChild(tr);
+                    });
+                } else {
+                    summaryText.innerText = `⚠️ ${data.message}`;
+                    tableBody.innerHTML = '';
+                }
+
+                loadStats();
+                loadWikiPages();
+                loadIndexAndLog();
+            } catch (e) {
+                progress.style.display = 'none';
+                alert("Fehler beim Ausführen des Verzeichnis-Scans.");
+            }
+        }
+
+        async function runRAGSearch() {
+            const query = document.getElementById('rag-input').value;
+            if (!query) return;
+
+            lastQuery = query;
+            const chunksContainer = document.getElementById('rag-chunks');
+            const responseContainer = document.getElementById('rag-response');
+            
+            chunksContainer.innerHTML = '<div style="color: var(--text-muted);">Durchsuche Vektor-Store...</div>';
+            responseContainer.innerText = 'Generiere Antwort im Schreibstil...';
+
+            try {
+                const res = await fetch('/api/rag', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: query })
+                });
+                const data = await res.json();
+
+                chunksContainer.innerHTML = '';
+                if (data.retrieved_chunks.length === 0) {
+                    chunksContainer.innerHTML = '<div style="color: var(--text-muted);">Keine spezifischen RAG-Treffer.</div>';
+                } else {
+                    data.retrieved_chunks.forEach((chunk, i) => {
+                        const scorePct = (chunk.score * 100).toFixed(1);
+                        const card = document.createElement('div');
+                        card.className = 'chunk-card';
+                        card.innerHTML = `
+                            <div class="chunk-header">
+                                <span>[${i+1}] ${chunk.title}</span>
+                                <span class="score-pill">Match: ${scorePct}%</span>
+                            </div>
+                            <div style="color: #cbd5e1; font-size: 13px;">${chunk.content}</div>
+                        `;
+                        chunksContainer.appendChild(card);
+                    });
+                }
+
+                lastAnswer = data.answer;
+                responseContainer.innerText = data.answer;
+            } catch (e) {
+                chunksContainer.innerHTML = '<div style="color: #ef4444;">Fehler bei RAG-Suche.</div>';
+            }
+        }
+
+        async function saveAnswerToWiki() {
+            if (!lastQuery || !lastAnswer) {
+                alert("Bitte führen Sie zuerst eine RAG-Abfrage aus!");
+                return;
+            }
+            const statusDiv = document.getElementById('save-wiki-status');
+            statusDiv.innerText = 'Speichere als Compounding Wiki-Seite...';
+
+            try {
+                const res = await fetch('/api/wiki/save-query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: lastQuery, answer: lastAnswer })
+                });
+                const data = await res.json();
+                statusDiv.innerText = '✅ ' + data.message;
+                loadStats();
+                loadWikiPages();
+                loadIndexAndLog();
+            } catch (e) {
+                statusDiv.innerText = '❌ Fehler beim Speichern im Wiki.';
+            }
+        }
+
+        async function runWikiLint() {
+            const reportBox = document.getElementById('lint-report-box');
+            reportBox.style.display = 'block';
+            reportBox.innerText = 'Analysiere Querverweise & Waisen-Seiten...';
+
+            try {
+                const res = await fetch('/api/wiki/lint', { method: 'POST' });
+                const data = await res.json();
+                const report = data.report;
+                reportBox.innerText = `[KAPARTHY LINT REPORT]
+• Status: ${report.status}
+• Geprüfte Seiten: ${report.total_pages}
+• Waisen-Seiten: ${report.orphan_pages.length > 0 ? report.orphan_pages.join(', ') : 'Keine (Alle sauber verknüpft)'}
+• Log: ${report.message}
+`;
+                loadIndexAndLog();
+            } catch (e) {
+                reportBox.innerText = 'Fehler beim Ausführen des Lint-Passes.';
+            }
+        }
+
+        function selectSource(source) {
+            if (source !== 'local') return;
+            document.querySelectorAll('.source-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('src-local').classList.add('active');
+        }
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+            document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+
+            if (tabName === 'wiki') document.getElementById('tab-wiki').style.display = 'block';
+            if (tabName === 'index') document.getElementById('tab-index').style.display = 'block';
+            if (tabName === 'log') document.getElementById('tab-log').style.display = 'block';
+            if (tabName === 'lint') document.getElementById('tab-lint').style.display = 'flex';
+            
+            event.target.classList.add('active');
+            loadIndexAndLog();
+        }
+
+        loadStats();
+        loadWikiPages();
+        loadIndexAndLog();
+        runRAGSearch();
+    </script>
+</body>
+</html>
