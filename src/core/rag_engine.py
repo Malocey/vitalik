@@ -58,7 +58,7 @@ class RAGEngine:
                         belegtyp TEXT, confidence_score REAL, md5_hash TEXT,
                         rag_read_verified INTEGER DEFAULT 0,
                         beleg_link TEXT, wiki_path TEXT, raw_text_path TEXT,
-                        summary TEXT, sevdesk_kunden_nr TEXT,
+                        summary TEXT, sevdesk_kunden_nr TEXT, contact_entity_id TEXT,
                         kreditoren_nr TEXT, zahlungsziel_tage INTEGER,
                         skonto_tage INTEGER, skonto_prozent REAL,
                         lieferant_match_source TEXT, steuer_match_source TEXT,
@@ -71,7 +71,8 @@ class RAGEngine:
                     row[1] for row in cursor.execute("PRAGMA table_info(belege)").fetchall()
                 }
                 additional_columns = {
-                    "sevdesk_kunden_nr": "TEXT", "kreditoren_nr": "TEXT",
+                    "sevdesk_kunden_nr": "TEXT", "contact_entity_id": "TEXT",
+                    "kreditoren_nr": "TEXT",
                     "zahlungsziel_tage": "INTEGER", "skonto_tage": "INTEGER",
                     "skonto_prozent": "REAL", "lieferant_match_source": "TEXT",
                     "steuer_match_source": "TEXT", "sevdesk_artikel_matches": "TEXT",
@@ -119,11 +120,11 @@ class RAGEngine:
                         steuer, brutto, ust_satz, warengruppe, skr_konto,
                         status, beleg_link, wiki_path, raw_text_path, summary,
                         belegtyp, confidence_score, md5_hash, rag_read_verified,
-                        sevdesk_kunden_nr, kreditoren_nr, zahlungsziel_tage,
+                        sevdesk_kunden_nr, contact_entity_id, kreditoren_nr, zahlungsziel_tage,
                         skonto_tage, skonto_prozent, lieferant_match_source,
                         steuer_match_source, sevdesk_artikel_matches,
                         updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                     ON CONFLICT(beleg_id) DO UPDATE SET
                         lieferant=excluded.lieferant, datum=excluded.datum,
                         rechnungsnummer=excluded.rechnungsnummer,
@@ -140,6 +141,7 @@ class RAGEngine:
                         md5_hash=excluded.md5_hash,
                         rag_read_verified=excluded.rag_read_verified,
                         sevdesk_kunden_nr=excluded.sevdesk_kunden_nr,
+                        contact_entity_id=excluded.contact_entity_id,
                         kreditoren_nr=excluded.kreditoren_nr,
                         zahlungsziel_tage=excluded.zahlungsziel_tage,
                         skonto_tage=excluded.skonto_tage,
@@ -157,7 +159,8 @@ class RAGEngine:
                     doc_data.get("wiki_path", ""), doc_data.get("raw_text_path", ""), summary,
                     doc_data.get("belegtyp", ""), doc_data.get("confidence_score"),
                     doc_data.get("md5_hash", ""), int(bool(doc_data.get("rag_read_verified"))),
-                    doc_data.get("sevdesk_kunden_nr"), doc_data.get("kreditoren_nr"),
+                    doc_data.get("sevdesk_kunden_nr"), doc_data.get("contact_entity_id"),
+                    doc_data.get("kreditoren_nr"),
                     doc_data.get("zahlungsziel_tage"), doc_data.get("skonto_tage"),
                     doc_data.get("skonto_prozent"), doc_data.get("lieferant_match_source"),
                     doc_data.get("steuer_match_source"),

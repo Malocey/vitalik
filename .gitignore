@@ -34,4 +34,4 @@ data/wiki/beleg_*.md
 !data/wiki/beleg_pipeline_anleitung.md
 data/wiki/entities/
 data/wiki/query_*.md
-data/document_jobs.db
+data/document_jobs.db*

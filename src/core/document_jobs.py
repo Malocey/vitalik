@@ -68,6 +68,25 @@ class DocumentJobEngine:
 
         return None
 
+    def claim_job(self, job_id: str, worker_id: str) -> Optional[Dict[str, Any]]:
+        """Least gezielt einen Job und setzt RETRY_PENDING auf den Checkpoint zurück."""
+        if not self.repo.claim_job(job_id, worker_id, self.lease_duration):
+            return None
+        claimed_job = self.repo.get_job(job_id)
+        if claimed_job and claimed_job["status"] == "RETRY_PENDING":
+            failed_stage = claimed_job.get("last_failed_stage")
+            resume_status = self.CHECKPOINT_RECOVERY.get(failed_stage, "DISCOVERED")
+            if not self.repo.update_job_status(job_id, worker_id, resume_status):
+                return None
+            claimed_job["status"] = resume_status
+        return claimed_job
+
+    def save_checkpoint(self, job_id: str, worker_id: str, data: Dict[str, Any]) -> bool:
+        return self.repo.save_checkpoint(job_id, worker_id, data)
+
+    def load_checkpoint(self, job_id: str) -> Optional[Dict[str, Any]]:
+        return self.repo.load_checkpoint(job_id)
+
     def renew_lease(self, job_id: str, worker_id: str) -> bool:
         """Renews the lease for a job."""
         return self.repo.renew_lease(job_id, worker_id, self.lease_duration)

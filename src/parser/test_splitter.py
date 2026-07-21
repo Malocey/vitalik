@@ -31,6 +31,11 @@ from pipeline import archive_pipeline
 from src.core.mocks import mock_sevdesk, mock_telegram
 from src.core.rag_engine import rag_engine
 from src.core.config import MOCK_DRIVE_DIR
+from src.core.contact_memory import ContactMemory
+from src.core.document_jobs import DocumentJobEngine
+from src.core.job_repository import JobRepository
+from src.core.pipeline_job_adapter import PipelineJobAdapter
+import src.parser.analyzer as analyzer_module
 
 
 def test_splitting_and_naming():
@@ -74,6 +79,9 @@ def test_splitting_and_naming():
     original_telegram = mock_telegram.send_approval_request
     original_rag_assignment = rag_engine.match_sevdesk_assignment
     original_rag_search = rag_engine.search
+    original_job_adapter = archive_pipeline.job_adapter
+    original_contact_store = archive_pipeline.contact_store
+    original_analyzer_contact_memory = analyzer_module.contact_memory
     temporary_root = Path(tempfile.mkdtemp(prefix="vitalik_splitter_test_"))
     test_mock_drive_dir = temporary_root / "Drive"
     sorter_module.MOCK_DRIVE_DIR = test_mock_drive_dir
@@ -86,6 +94,12 @@ def test_splitting_and_naming():
     mock_telegram.send_approval_request = lambda doc: "TEST"
     rag_engine.match_sevdesk_assignment = lambda text: {"supplier": None, "articles": []}
     rag_engine.search = lambda *args, **kwargs: []
+    test_contact_memory = ContactMemory(temporary_root / "rag_index.db")
+    archive_pipeline.contact_store = test_contact_memory
+    analyzer_module.contact_memory = test_contact_memory
+    archive_pipeline.job_adapter = PipelineJobAdapter(DocumentJobEngine(
+        repository=JobRepository(str(temporary_root / "document_jobs.db"))
+    ))
 
     # Mock inspect_pdf
     pdf_engine.inspect_pdf = lambda path: mock_pages
@@ -240,6 +254,9 @@ def test_splitting_and_naming():
         mock_telegram.send_approval_request = original_telegram
         rag_engine.match_sevdesk_assignment = original_rag_assignment
         rag_engine.search = original_rag_search
+        archive_pipeline.job_adapter = original_job_adapter
+        archive_pipeline.contact_store = original_contact_store
+        analyzer_module.contact_memory = original_analyzer_contact_memory
         shutil.rmtree(temporary_root, ignore_errors=True)
 
 

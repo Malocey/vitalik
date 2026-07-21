@@ -11,6 +11,7 @@ Extraktion, optionalen LM-Studio-Workern, SQLite-FTS5-RAG, Wiki und CSV-Inventar
 - [LM-Studio-Cluster](docs/lm_studio_cluster.md)
 - [Adaptive Fast Lane](docs/adaptive_fast_lane.md)
 - [Wiederaufnehmbare Dokumentjobs](docs/resumable_document_jobs.md)
+- [Dublettenfreies Kontaktgedächtnis](docs/contact_memory.md)
 
 ## Sichere lokale Prüfungen
 
@@ -20,5 +21,5 @@ python3 src/core/benchmark_document_pipeline.py data/testdata --mode structural
 ```
 
 Tests dürfen weder produktive Dateien verschieben noch `data/rag_index.db` oder das
-Wiki verändern. Der aktuelle Integrationsstand umfasst Fast Lane und Job-Engine als
-getestete Bausteine; ihre Verdrahtung in `ArchivePipeline` ist noch ausstehend.
+Wiki verändern. Die Job-Engine und das Kontaktgedächtnis sind in `ArchivePipeline`
+integriert. Die Fast Lane bleibt bis zum gesonderten A/B-Benchmark deaktiviert.

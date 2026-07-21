@@ -9,6 +9,7 @@ import re
 from typing import Dict, Any, List, Optional
 from src.core.local_llm_client import default_llm_client, LocalLLMClient
 from src.core.rag_engine import rag_engine
+from src.core.contact_memory import contact_memory
 from src.core.persona_style import persona_engine
 from src.parser.amount_parser import parse as parse_amounts
 from src.parser.boundary_detector_v2 import BoundaryDetectorV2
@@ -114,12 +115,17 @@ class DocumentAnalyzer:
         supplier = assignment.get("supplier")
         if supplier:
             doc_data["lieferant"] = supplier["name"]
-            doc_data["sevdesk_kunden_nr"] = supplier["kunden_nr"]
+            source = supplier.get("source", "sevdesk_contacts")
+            if source == "contact_memory":
+                doc_data["contact_entity_id"] = supplier.get("entity_id")
+                doc_data["sevdesk_kunden_nr"] = supplier.get("sevdesk_id")
+            else:
+                doc_data["sevdesk_kunden_nr"] = supplier["kunden_nr"]
             doc_data["kreditoren_nr"] = supplier.get("kreditoren_nr")
             doc_data["zahlungsziel_tage"] = supplier.get("zahlungsziel_tage")
             doc_data["skonto_tage"] = supplier.get("skonto_tage")
             doc_data["skonto_prozent"] = supplier.get("skonto_prozent")
-            doc_data["lieferant_match_source"] = "sevdesk_contacts"
+            doc_data["lieferant_match_source"] = source
 
         articles = assignment.get("articles") or []
         if articles:
@@ -393,6 +399,10 @@ class DocumentAnalyzer:
             ocr_failed = any(p.get("ocr_status") == "OCR_FAILED" for p in doc_pages)
 
             sevdesk_assignment = rag_engine.match_sevdesk_assignment(combined_text)
+            if not sevdesk_assignment.get("supplier"):
+                learned_supplier = contact_memory.match_text(combined_text, "supplier")
+                if learned_supplier:
+                    sevdesk_assignment["supplier"] = learned_supplier
             search_query = self._build_rag_query(combined_text)
             rag_hits = rag_engine.search(search_query, top_k=5)
             rag_context_ids = [hit.get("doc_id") for hit in rag_hits]

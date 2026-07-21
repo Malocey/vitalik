@@ -121,12 +121,18 @@ class KarpathyLLMWikiEngine:
         link_line = f"- **Originalbeleg:** [PDF öffnen](<{beleg_link}>)\n" if beleg_link else ""
         assignment_lines = ""
         if doc_data.get("lieferant_match_source"):
-            assignment_lines += (
-                f"- **sevDesk-Kontakt:** {doc_data.get('sevdesk_kunden_nr', '')}\n"
-                f"- **Kreditorennummer:** {doc_data.get('kreditoren_nr', '')}\n"
-                f"- **Zahlungsziel:** {doc_data.get('zahlungsziel_tage', '')} Tage\n"
-                f"- **Zuordnungsquelle:** sevDesk-Kontakte\n"
-            )
+            if doc_data.get("lieferant_match_source") == "contact_memory":
+                assignment_lines += (
+                    f"- **Kontaktentität:** {doc_data.get('contact_entity_id', '')}\n"
+                    f"- **Zuordnungsquelle:** Kontaktgedächtnis\n"
+                )
+            else:
+                assignment_lines += (
+                    f"- **sevDesk-Kontakt:** {doc_data.get('sevdesk_kunden_nr', '')}\n"
+                    f"- **Kreditorennummer:** {doc_data.get('kreditoren_nr', '')}\n"
+                    f"- **Zahlungsziel:** {doc_data.get('zahlungsziel_tage', '')} Tage\n"
+                    f"- **Zuordnungsquelle:** sevDesk-Kontakte\n"
+                )
         article_matches = doc_data.get("sevdesk_artikel_matches") or []
         if article_matches:
             assignment_lines += "- **sevDesk-Artikel:** " + ", ".join(
