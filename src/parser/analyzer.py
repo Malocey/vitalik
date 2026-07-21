@@ -10,6 +10,9 @@ from typing import Dict, Any, List, Optional
 from src.core.local_llm_client import default_llm_client, LocalLLMClient
 from src.core.rag_engine import rag_engine
 from src.core.persona_style import persona_engine
+from src.parser.amount_parser import parse as parse_amounts
+from src.parser.boundary_detector_v2 import BoundaryDetectorV2
+from src.parser.document_type_classifier import DocumentTypeClassifier
 
 logger = logging.getLogger("Analyzer")
 
@@ -17,12 +20,30 @@ logger = logging.getLogger("Analyzer")
 class DocumentAnalyzer:
     def __init__(self, llm_client: LocalLLMClient = default_llm_client):
         self.llm_client = llm_client
+        self.boundary_detector = BoundaryDetectorV2()
+        self.type_classifier = DocumentTypeClassifier()
 
     def detect_boundaries(self, pages_info: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Ermittelt anhand von Heuristiken die logischen Beleggrenzen in einem Stapel.
         Gibt eine Liste von Dicts mit start_page und end_page zurück.
         """
+        try:
+            result = self.boundary_detector.detect(pages_info)
+            boundaries = [
+                {
+                    "start_page": item["start_page"],
+                    "end_page": item["end_page"],
+                    "boundary_confidence": item.get("confidence"),
+                    "boundary_warnings": item.get("warnings", []),
+                }
+                for item in result["documents"]
+            ]
+            if boundaries:
+                return boundaries
+        except (ValueError, RuntimeError) as exc:
+            logger.warning(f"[Analyzer] Boundary Detector V2 nicht nutzbar, Legacy-Fallback: {exc}")
+
         boundaries = []
         n_pages = len(pages_info)
         if n_pages == 0:
@@ -376,6 +397,12 @@ class DocumentAnalyzer:
             rag_hits = rag_engine.search(search_query, top_k=5)
             rag_context_ids = [hit.get("doc_id") for hit in rag_hits]
 
+            type_result = self.type_classifier.classify(
+                combined_text,
+                pages=len(doc_pages),
+                ocr_quality=min(ocr_scores) if ocr_scores else None,
+            )
+            amount_result = parse_amounts(doc_pages)
             protected_type = self.detect_high_priority_document_type(combined_text)
             regex_data = None if protected_type else self.try_regex_extraction(combined_text)
             if protected_type:
@@ -447,6 +474,7 @@ Du musst versuchen, die Felder so genau wie möglich auszulesen. Falls ein Wert 
 
             if not protected_type:
                 doc_data = self._apply_sevdesk_assignment(doc_data, sevdesk_assignment)
+            self._apply_deterministic_evidence(doc_data, type_result, amount_result)
             doc_data["rag_context_ids"] = rag_context_ids
             doc_data["rag_read_verified"] = True
             doc_data["ocr_quality_score"] = min(ocr_scores) if ocr_scores else 1.0
@@ -461,6 +489,42 @@ Du musst versuchen, die Felder so genau wie möglich auszulesen. Falls ein Wert 
             extracted_documents.append(doc_data)
 
         return extracted_documents
+
+    @staticmethod
+    def _apply_deterministic_evidence(
+        doc_data: Dict[str, Any],
+        type_result: Dict[str, Any],
+        amount_result: Dict[str, Any],
+    ) -> None:
+        """Nutzt nur konfliktfreie Skript-Evidenz; erteilt keine Buchungsfreigabe."""
+        doc_data["document_type_evidence"] = type_result
+        doc_data["amount_evidence"] = amount_result
+
+        if (
+            type_result.get("status") == "CLASSIFIED"
+            and float(type_result.get("confidence", 0.0)) >= 0.80
+            and type_result.get("document_type") not in {"Sonstiges", "Unlesbar"}
+        ):
+            doc_data["belegtyp"] = type_result["document_type"]
+            doc_data["document_type_match_source"] = "deterministic_classifier_v2"
+
+        if (
+            amount_result.get("math_valid") is True
+            and float(amount_result.get("confidence", 0.0)) >= 0.85
+            and not amount_result.get("conflicts")
+            and amount_result.get("gross")
+        ):
+            mapping = {"net": "netto", "tax": "steuer", "gross": "brutto"}
+            for source, target in mapping.items():
+                candidate = amount_result.get(source)
+                if candidate is not None:
+                    doc_data[target] = candidate["value"]
+            breakdown = amount_result.get("tax_breakdown") or []
+            rates = {item.get("tax_rate") for item in breakdown if item.get("tax_rate") is not None}
+            if len(rates) == 1:
+                doc_data["steuersatz_prozent"] = rates.pop()
+            doc_data["amounts_estimated"] = False
+            doc_data["amount_match_source"] = "deterministic_amount_parser"
 
     def analyze_document(self, pages_info: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Analysiert einen bereits getrennten Beleg ohne zweite Grenzerkennung."""

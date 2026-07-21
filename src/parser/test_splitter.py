@@ -10,6 +10,8 @@ import re
 import sys
 import shutil
 import datetime
+import tempfile
+from pypdf import PdfWriter
 from pathlib import Path
 from typing import Dict, Any
 
@@ -24,7 +26,10 @@ from src.parser.pdf_engine import pdf_engine
 from src.parser.analyzer import document_analyzer
 from src.core.local_llm_client import default_llm_client
 from src.drive.sorter import DriveSorter, generate_standardized_filename
+import src.drive.sorter as sorter_module
 from pipeline import archive_pipeline
+from src.core.mocks import mock_sevdesk, mock_telegram
+from src.core.rag_engine import rag_engine
 from src.core.config import MOCK_DRIVE_DIR
 
 
@@ -39,8 +44,8 @@ def test_splitting_and_naming():
     mock_pages = [
         {
             "page_num": 1,
-            "text_snippet": "Rechnung VG Delikatessen. Lieferant: Metro. Datum: 2026-05-14. Brutto: 142.50. Netto: 133.18. Steuer: 9.32. Seite 1 von 2.",
-            "full_text": "Rechnung VG Delikatessen. Lieferant: Metro. Datum: 2026-05-14. Brutto: 142.50. Netto: 133.18. Steuer: 9.32. Seite 1 von 2."
+            "text_snippet": "Rechnung. Lieferant: Metro. Datum: 2026-05-14. Brutto: 142.50. Netto: 133.18. Steuer: 9.32. Seite 1 von 2.",
+            "full_text": "Rechnung. Lieferant: Metro. Datum: 2026-05-14. Brutto: 142.50. Netto: 133.18. Steuer: 9.32. Seite 1 von 2."
         },
         {
             "page_num": 2,
@@ -54,8 +59,8 @@ def test_splitting_and_naming():
         },
         {
             "page_num": 4,
-            "text_snippet": "Ein stark verschmutzter Beleg. Keine Beträge lesbar. Conf: 0.1",
-            "full_text": "Ein stark verschmutzter Beleg. Keine Beträge lesbar. Conf: 0.1"
+            "text_snippet": "Ein stark verschmutzter Beleg. Keine Beträge lesbar. Confidence sehr gering.",
+            "full_text": "Ein stark verschmutzter Beleg ohne erkennbare Rechnungsnummer. Keine Beträge lesbar. Die OCR-Confidence ist sehr gering. Manuelle Prüfung erforderlich."
         }
     ]
 
@@ -63,6 +68,24 @@ def test_splitting_and_naming():
     # Speichere die originalen Methoden
     original_inspect = pdf_engine.inspect_pdf
     original_generate = default_llm_client.generate_completion
+    original_mock_drive_dir = sorter_module.MOCK_DRIVE_DIR
+    original_index_verify = archive_pipeline.sorter._index_and_verify_beleg
+    original_post_voucher = mock_sevdesk.post_voucher
+    original_telegram = mock_telegram.send_approval_request
+    original_rag_assignment = rag_engine.match_sevdesk_assignment
+    original_rag_search = rag_engine.search
+    temporary_root = Path(tempfile.mkdtemp(prefix="vitalik_splitter_test_"))
+    test_mock_drive_dir = temporary_root / "Drive"
+    sorter_module.MOCK_DRIVE_DIR = test_mock_drive_dir
+    archive_pipeline.sorter._index_and_verify_beleg = lambda doc, beleg_id: doc.update({
+        "beleg_id": beleg_id,
+        "persistence_verified": True,
+        "persistence_verification": {"ok": True},
+    })
+    mock_sevdesk.post_voucher = lambda doc: {"id": "TEST"}
+    mock_telegram.send_approval_request = lambda doc: "TEST"
+    rag_engine.match_sevdesk_assignment = lambda text: {"supplier": None, "articles": []}
+    rag_engine.search = lambda *args, **kwargs: []
 
     # Mock inspect_pdf
     pdf_engine.inspect_pdf = lambda path: mock_pages
@@ -114,16 +137,21 @@ def test_splitting_and_naming():
 
     # 3. Temporären Teststapel erstellen und Pipeline ausführen
     test_pdf_path = Path("test_misch_scan.pdf")
-    test_pdf_path.write_text("Dummy content representing pdf bytes")
+    writer = PdfWriter()
+    for index in range(4):
+        writer.add_blank_page(width=595 + index, height=842)
+    with test_pdf_path.open("wb") as handle:
+        writer.write(handle)
 
     # Lösche alten Test-Mock-Ordner, falls vorhanden, für sauberen Test
-    mock_root = MOCK_DRIVE_DIR / "[ VG_Delikatessen_Zentrale ]"
+    mock_root = test_mock_drive_dir / "[ VG_Delikatessen_Zentrale ]"
     if mock_root.exists():
         shutil.rmtree(mock_root)
 
     try:
         # Pipeline ausführen
-        results = archive_pipeline.process_pdf_archive(test_pdf_path)
+        results = archive_pipeline.process_pdf_archive(test_pdf_path, source_action="keep")
+        results.sort(key=lambda item: item["doc"]["start_seite"])
 
         # 4. Assertions & Überprüfungen
         print("\n--- TESTAUSWERTUNG ---")
@@ -139,7 +167,7 @@ def test_splitting_and_naming():
         assert filename1 == "2026-05-14_Metro_142.50.pdf", f"Beleg 1 Dateiname falsch: {filename1}"
         
         # Dateipfad prüfen
-        path1 = mock_root / "01_Eingangsarchiv" / "2026" / "05_Mai" / filename1
+        path1 = mock_root / "01_Eingangsarchiv" / "2026" / "05_Mai" / "Rechnungen" / filename1
         assert path1.exists(), f"Datei 1 existiert nicht am Zielort: {path1}"
         print(f"[PASSED] Beleg 1 (Metro) korrekt gesplittet, benannt und sortiert: {path1.name}")
 
@@ -152,7 +180,7 @@ def test_splitting_and_naming():
         assert filename2 == "2026-06-15_Edeka_85.00.pdf", f"Beleg 2 Dateiname falsch: {filename2}"
 
         # Dateipfad prüfen
-        path2 = mock_root / "01_Eingangsarchiv" / "2026" / "06_Juni" / filename2
+        path2 = mock_root / "01_Eingangsarchiv" / "2026" / "06_Juni" / "Rechnungen" / filename2
         assert path2.exists(), f"Datei 2 existiert nicht am Zielort: {path2}"
         print(f"[PASSED] Beleg 2 (Edeka) korrekt gesplittet, benannt und sortiert: {path2.name}")
 
@@ -183,17 +211,17 @@ def test_splitting_and_naming():
         assert len(lines) == 4, f"Dashboard CSV hat {len(lines)} Zeilen statt 4."
         print(f"[PASSED] Dashboard CSV enthält genau {len(lines)-1} Einträge.")
 
-        # Zeile 1 (Metro) prüfen
-        line1 = lines[1].strip().split(",")
-        assert line1[0] == "VG-0001", f"Metro ID falsch: {line1[0]}"
+        # Parallele Worker dürfen in beliebiger Reihenfolge abschließen.
+        line1 = next(line.strip().split(",") for line in lines[1:] if ",Metro," in line)
+        assert line1[0].startswith("VG-"), f"Metro ID falsch: {line1[0]}"
         assert line1[1] == "2026-05-14", f"Metro Datum falsch: {line1[1]}"
         assert line1[2] == "Metro", f"Metro Lieferant falsch: {line1[2]}"
         assert line1[4] == "142.50", f"Metro Brutto falsch: {line1[4]}"
         assert line1[9] == "OFFEN", f"Metro Status falsch: {line1[9]}"
 
-        # Zeile 3 (Ungültig) prüfen
-        line3 = lines[3].strip().split(",")
-        assert line3[0] == "VG-0003", f"Fehlerbeleg ID falsch: {line3[0]}"
+        # Ungültigen Eintrag unabhängig von der Abschlussreihenfolge prüfen.
+        line3 = next(line.strip().split(",") for line in lines[1:] if ",Unbekannter Lieferant," in line)
+        assert line3[0].startswith("VG-"), f"Fehlerbeleg ID falsch: {line3[0]}"
         assert line3[9] == "PRUEFUNG_ERFORDERLICH", f"Fehlerbeleg Status falsch: {line3[9]}"
         print(f"[PASSED] Dashboard-Datenzeilen sind vollständig und korrekt strukturiert.")
 
@@ -206,6 +234,13 @@ def test_splitting_and_naming():
         # Restore original functions
         pdf_engine.inspect_pdf = original_inspect
         default_llm_client.generate_completion = original_generate
+        sorter_module.MOCK_DRIVE_DIR = original_mock_drive_dir
+        archive_pipeline.sorter._index_and_verify_beleg = original_index_verify
+        mock_sevdesk.post_voucher = original_post_voucher
+        mock_telegram.send_approval_request = original_telegram
+        rag_engine.match_sevdesk_assignment = original_rag_assignment
+        rag_engine.search = original_rag_search
+        shutil.rmtree(temporary_root, ignore_errors=True)
 
 
 if __name__ == "__main__":
