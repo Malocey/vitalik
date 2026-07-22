@@ -1,24 +1,36 @@
 import argparse
+import sys
 from pathlib import Path
-from src.wiki.wiki_engine import karpathy_wiki
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.wiki.wiki_engine import KarpathyLLMWikiEngine, karpathy_wiki
 
 def main():
     parser = argparse.ArgumentParser(description="Lint and repair VG Delikatessen LLM-Wiki")
     parser.add_argument("--wiki", help="Path to the wiki directory (optional, overrides default)")
     parser.add_argument("--output", help="Output directory for reports (optional)")
+    parser.add_argument("--db", help="Path to the SQLite RAG database (optional)")
     parser.add_argument("--repair", action="store_true", help="Repair missing article type pages deterministically")
 
     args = parser.parse_args()
 
-    # If a custom wiki dir is passed, update the karpathy_wiki instance
-    if args.wiki:
-        karpathy_wiki.wiki_dir = Path(args.wiki)
+    engine = (
+        KarpathyLLMWikiEngine(wiki_dir=Path(args.wiki), rag=karpathy_wiki.rag)
+        if args.wiki else karpathy_wiki
+    )
 
-    print(f"Linting wiki at: {karpathy_wiki.wiki_dir}")
+    print(f"Linting wiki at: {engine.wiki_dir}")
     if args.repair:
         print("Repair mode is ENABLED. Will generate missing article type pages.")
 
-    report = karpathy_wiki.lint_wiki(output_dir=args.output, repair=args.repair)
+    report = engine.lint_wiki(
+        output_dir=args.output,
+        repair=args.repair,
+        db_path=Path(args.db) if args.db else None,
+    )
 
     print(f"\nLint completed. Status: {report['status']}")
     print(f"Total pages scanned: {report['total_pages']}")

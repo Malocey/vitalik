@@ -228,3 +228,53 @@ def test_reports_written(temp_wiki, temp_db, tmp_path):
 
     j = json.loads((output_dir / "wiki_lint_report.json").read_text(encoding="utf-8"))
     assert j["total_pages"] == 1
+
+
+def test_lint_does_not_mutate_wiki(temp_wiki, temp_db, tmp_path):
+    engine, wiki_dir = temp_wiki
+    page = wiki_dir / "valid.md"
+    page.write_text("---\nentity_id: 1\nentity_type: konzept\ncanonical_name: A\nsource_count: 0\nupdated: '2'\n---\n", encoding="utf-8")
+    before = {p.relative_to(wiki_dir): p.read_bytes() for p in wiki_dir.rglob("*") if p.is_file()}
+
+    engine.lint_wiki(output_dir=tmp_path / "reports", db_path=temp_db)
+
+    after = {p.relative_to(wiki_dir): p.read_bytes() for p in wiki_dir.rglob("*") if p.is_file()}
+    assert after == before
+
+
+def test_nested_markdown_link_is_resolved_relative_to_source(temp_wiki, temp_db):
+    engine, wiki_dir = temp_wiki
+    nested = wiki_dir / "entities" / "suppliers"
+    nested.mkdir(parents=True)
+    fm = "---\nentity_id: {}\nentity_type: konzept\ncanonical_name: A\nsource_count: 0\nupdated: '2'\n---\n"
+    (nested / "a.md").write_text(fm.format("a") + "[B](../categories/b.md)\n", encoding="utf-8")
+    categories = wiki_dir / "entities" / "categories"
+    categories.mkdir()
+    (categories / "b.md").write_text(fm.format("b"), encoding="utf-8")
+
+    report = engine.lint_wiki(db_path=temp_db)
+
+    assert report["broken_markdown_links"] == []
+    assert "entities/categories/b.md" not in report["orphan_pages"]
+
+
+def test_existing_category_uses_normalized_slug(temp_wiki, temp_db):
+    engine, wiki_dir = temp_wiki
+    suppliers = wiki_dir / "entities" / "suppliers"
+    categories = wiki_dir / "entities" / "categories"
+    suppliers.mkdir(parents=True)
+    categories.mkdir(parents=True)
+    supplier_fm = {
+        "entity_id": "sup1", "entity_type": "supplier", "canonical_name": "S",
+        "source_count": 0, "updated": "2026-01-01", "article_categories": ["Käse"],
+        "skr03_accounts": [],
+    }
+    (suppliers / "s.md").write_text(f"---\n{yaml.safe_dump(supplier_fm)}---\n", encoding="utf-8")
+    (categories / "article_category_k-se.md").write_text(
+        "---\nentity_id: cat\nentity_type: article_category\ncanonical_name: Käse\nsource_count: 0\nupdated: '2'\n---\n",
+        encoding="utf-8",
+    )
+
+    report = engine.lint_wiki(db_path=temp_db)
+
+    assert report["missing_article_categories"] == []

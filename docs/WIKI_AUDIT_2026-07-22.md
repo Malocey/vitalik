@@ -56,3 +56,25 @@ Voraussetzung für Persistenz oder Suche werden.
 2. Wiki-Linter, Kategorien, Index und Graph vollständig korrigieren.
 3. Reproduzierbaren RAG-Retrieval-Benchmark erstellen.
 4. Danach Pilotlauf mit 30 Dokumenten starten.
+
+## Ergebnis nach Integration des rekursiven Linters
+
+Der neue Linter wurde am 22. Juli 2026 read-only gegen `data/wiki` und
+`data/rag_index.db` ausgeführt. Der Lauf prüfte 102 Fachseiten (Index und Log
+werden absichtlich nicht mitgezählt) und ließ den Wiki-Bestand unverändert.
+
+- Status: `ISSUES_FOUND`
+- 15 Seiten ohne eingehenden Link
+- 11 kaputte Wikilinks zu 4 fehlenden Artikelarten
+- keine doppelten Slugs oder `entity_id`-Werte
+- keine fehlenden Belegquellen in SQLite
+- 90 ältere/importierte Seiten ohne das neue vollständige Frontmatter-Schema
+- 3 ausdrücklich tolerierte Legacy-Seiten
+
+Die 90 Frontmatter-Meldungen bedeuten nicht, dass die sevDesk-Daten verloren
+sind. Sie zeigen den noch offenen Schema-Migrationsbedarf. Der automatische
+`--repair`-Modus wurde deshalb bewusst nicht auf Produktivdaten angewendet.
+
+Integrationsprüfung des gesamten Projekts: **173 Tests bestanden**. Zusätzlich
+wurden Regressionstests für read-only Betrieb, relative Links in Unterordnern
+und normalisierte Artikelart-Slugs ergänzt.

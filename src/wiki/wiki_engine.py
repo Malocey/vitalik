@@ -359,8 +359,11 @@ class KarpathyLLMWikiEngine:
             and not any("archive" in part.casefold() for part in p.relative_to(self.wiki_dir).parts)
         ]
 
-        all_links = set()
-        incoming_links = {p.name: set() for p in pages}
+        relative_to_page = {p.relative_to(self.wiki_dir).as_posix(): p for p in pages}
+        stem_to_relatives: Dict[str, List[str]] = {}
+        for relative, page in relative_to_page.items():
+            stem_to_relatives.setdefault(page.stem, []).append(relative)
+        incoming_links = {relative: set() for relative in relative_to_page}
 
         broken_markdown_links = []
         broken_wikilinks = []
@@ -369,7 +372,7 @@ class KarpathyLLMWikiEngine:
         invalid_frontmatters = []
         legacy_warnings = []
         missing_sources = []
-        missing_article_categories = set()
+        missing_article_categories: Dict[str, str] = {}
         entity_id_to_path = {}
 
         db_conn = None
@@ -386,11 +389,9 @@ class KarpathyLLMWikiEngine:
                 db_conn.close()
                 db_conn = None
 
-        page_names = {p.name for p in pages}
-        page_stems = {p.stem for p in pages}
-
         for p in pages:
             text = p.read_text(encoding="utf-8")
+            source_relative = p.relative_to(self.wiki_dir).as_posix()
 
             # Duplicate Slugs
             if p.stem not in slug_to_paths:
@@ -440,29 +441,41 @@ class KarpathyLLMWikiEngine:
                                 invalid_frontmatters.append(p.name)
                         if "article_categories" in fm and isinstance(fm["article_categories"], list):
                             for cat in fm["article_categories"]:
-                                missing_article_categories.add(cat)
+                                label = str(cat).strip()
+                                if label:
+                                    missing_article_categories.setdefault(self._entity_slug(label), label)
 
             # Parse links
             # Markdown links: [label](./slug.md) or [label](slug.md)
-            md_links = re.findall(r"\[.*?\]\(\.?/?([a-zA-Z0-9_\-]+)\.md\)", text)
-            for target_stem in md_links:
-                target_name = f"{target_stem}.md"
-                if target_name in incoming_links:
-                    incoming_links[target_name].add(p.name)
-                if target_name not in page_names:
-                    broken_markdown_links.append({"from": p.name, "to": target_name})
+            md_links = re.findall(r"\[[^\]]*\]\(([^)<>]+\.md)(?:#[^)]*)?\)", text)
+            for target in md_links:
+                target_path = (p.parent / target).resolve()
+                try:
+                    target_relative = target_path.relative_to(self.wiki_dir.resolve()).as_posix()
+                except ValueError:
+                    target_relative = target
+                if target_relative in incoming_links:
+                    incoming_links[target_relative].add(source_relative)
+                elif target_relative not in {"index.md", "log.md"}:
+                    broken_markdown_links.append({
+                        "from": p.name if len(stem_to_relatives[p.stem]) == 1 else source_relative,
+                        "to": target.removeprefix("./"),
+                    })
 
             # Wikilinks: [[slug]] or [[slug|label]]
             wikilinks = re.findall(r"\[\[([\w\-]+)(?:\|.*?)?\]\]", text)
             for target_stem in wikilinks:
-                target_name = f"{target_stem}.md"
-                if target_name in incoming_links:
-                    incoming_links[target_name].add(p.name)
-                if target_name not in page_names:
-                    broken_wikilinks.append({"from": p.name, "to": target_name})
+                candidates = stem_to_relatives.get(target_stem, [])
+                if len(candidates) == 1:
+                    incoming_links[candidates[0]].add(source_relative)
+                elif not candidates:
+                    broken_wikilinks.append({
+                        "from": p.name if len(stem_to_relatives[p.stem]) == 1 else source_relative,
+                        "to": f"{target_stem}.md",
+                    })
                 if target_stem.startswith("article_category_"):
-                    cat_name = target_stem.replace("article_category_", "")
-                    missing_article_categories.add(cat_name)
+                    cat_name = target_stem.replace("article_category_", "", 1)
+                    missing_article_categories.setdefault(self._entity_slug(cat_name), cat_name)
 
             # Check sources
             if fm and fm.get("entity_type") in ["supplier", "review_queue"]:
@@ -486,18 +499,27 @@ class KarpathyLLMWikiEngine:
 
         duplicate_slugs = {k: v for k, v in slug_to_paths.items() if len(v) > 1}
 
-        orphans = [p.name for p in pages if len(incoming_links[p.name]) == 0 and p.stem not in ["vitali_persona_und_stil", "lieferanten_und_kontenrahmen", "beleg_pipeline_anleitung", "index", "log"]]
+        orphans = [
+            p.name if len(stem_to_relatives[p.stem]) == 1 else relative
+            for relative, p in relative_to_page.items()
+            if not incoming_links[relative]
+            and p.stem not in ["vitali_persona_und_stil", "lieferanten_und_kontenrahmen", "beleg_pipeline_anleitung", "index", "log"]
+        ]
 
         # Article categories repair logic
-        existing_categories = [p.stem.replace("article_category_", "") for p in pages if p.stem.startswith("article_category_")]
-        missing_categories = sorted(list(missing_article_categories - set(existing_categories)))
+        existing_categories = {
+            p.stem.replace("article_category_", "", 1)
+            for p in pages if p.stem.startswith("article_category_")
+        }
+        missing_category_slugs = sorted(set(missing_article_categories) - existing_categories)
+        missing_categories = [missing_article_categories[slug] for slug in missing_category_slugs]
         repaired_categories = []
 
         if repair and missing_categories:
             categories_dir = self.wiki_dir / "entities" / "categories"
             categories_dir.mkdir(parents=True, exist_ok=True)
-            for cat in missing_categories:
-                norm_slug = self._entity_slug(cat)
+            for norm_slug in missing_category_slugs:
+                cat = missing_article_categories[norm_slug]
                 cat_slug = f"article_category_{norm_slug}"
                 cat_path = categories_dir / f"{cat_slug}.md"
                 if not cat_path.exists():
@@ -581,7 +603,6 @@ Dies ist eine deterministisch generierte Artikelart-Seite für '{cat}'.
         md_path = output_dir / "wiki_lint_report.md"
         md_path.write_text(md_content, encoding="utf-8")
 
-        self.log_event("LINT_PASS", f"Wiki-Lint abgeschlossen. {len(pages)} Seiten geprüft. Status: {report['status']}")
         return report
 
     def initialize_default_wiki(self):
