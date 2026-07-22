@@ -7,6 +7,7 @@ Extrahiert Seitentexte und zerschneidet Dokumente an den ermittelten Beleggrenze
 import logging
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import List, Dict, Any
 from src.parser.ocr_engine import ocr_engine
@@ -138,8 +139,11 @@ class PDFEngine:
                             "ocr_status": "OCR_FAILED",
                         }
                 
-                # Mit ThreadPoolExecutor parallel verarbeiten (bis zu 8 Threads)
-                max_workers = min(8, total_pages)
+                # Native PDF-/OCR-Bibliotheken können bei sehr großen Scans unter
+                # zu hoher Parallelität den gesamten Prozess beenden. Deshalb ist
+                # die Obergrenze konfigurierbar und konservativ vorbelegt.
+                configured_workers = max(1, int(os.getenv("OCR_MAX_WORKERS", "4")))
+                max_workers = min(configured_workers, total_pages)
                 logger.info(f"[PDFEngine] Starte paralleles OCR mit {max_workers} Workern für {total_pages} Seiten...")
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
                     results = list(executor.map(process_page, range(total_pages)))
