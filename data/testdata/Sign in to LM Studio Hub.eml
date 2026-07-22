@@ -1,0 +1,873 @@
+Delivered-To: gdamien00@gmail.com
+Received: by 2002:a17:906:40d2:b0:c16:11a4:277a with SMTP id a18csp2372858ejk;
+        Tue, 21 Jul 2026 11:51:19 -0700 (PDT)
+X-Received: by 2002:a05:6214:3287:b0:903:f5c9:f586 with SMTP id 6a1803df08f44-9077835418dmr222359236d6.7.1784659878749;
+        Tue, 21 Jul 2026 11:51:18 -0700 (PDT)
+ARC-Seal: i=1; a=rsa-sha256; t=1784659878; cv=none;
+        d=google.com; s=arc-20260327;
+        b=G4h9ZCKY0jsQe0SFpT0X/x4C/Z3db1M+Ia+XzhvicSD9m6LOYzAmq2lzBEgE2qF8J4
+         LT69xWF3CPluQL1xFnqrDrThn9gkW5ZULhJOHQIs7rSmQpI8N4ti8MED6nyA7e9ugyeY
+         a1Y0l8LbInGXtl+8yteitvqKTMFscu2zTSYhRDqwO3e3OhLLENjHv/UQgt7G+XllBtgb
+         T0XhKLmCd2M9ovxVqDt8u2WPeGiWt9xd1MGnbb3+viuaF+JGEsDYhzFd0Df1rvev2MMr
+         J77hDqxjH/rGDkbwJA5UhzOfRWiBrxt1x6x7eL2tv0zaeAMoiVtXPaVnve8KGjALBXGW
+         kukg==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20260327;
+        h=feedback-id:precedence:mime-version:subject:message-id:cc:to:from
+         :date:dkim-signature:dkim-signature;
+        bh=3Zbkfq0RKAf1lYHlLHRCq9/Rcx5N5BYh7RjL/VV3prw=;
+        fh=xCBR06tKZnYBdm2AGUg1zcn5lhu77YAN2bu53rrC54U=;
+        b=mWH7zsAEh7z6HZX9S3p4bNuvHuIOcQCEPCyIsV29OtzD0dOWjpbfzNPMQwYGRXxS0n
+         eEys8LrS3Mh2vSCHRIKDF0RdtRpSZi99MTdtTlYDf7jWmxXiYm+sz1IzPw8if85/bRfj
+         Fjfc4nAjup74V2P+hA0FoY1Iy0CgJKGa1AbxGk5AcS7eY5EZognGNNJ4Lv2x8tJm9ekN
+         u/ZUDteaLsIRB4dTAzCV/ZsR5lLUXK1ezEgcwTp9mD+AGiDH+ugoW8x5Rr4UL4UoW0g3
+         iWbXmumcCJdLssHie4Wmk3JVwUkRY5xi0RnmBK7vPvkbHoH6JN3D+OFIfGhRE/xZLP/p
+         oQ6w==;
+        dara=google.com
+ARC-Authentication-Results: i=1; mx.google.com;
+       dkim=pass header.i=@mail.lmstudio.ai header.s=s4bggld756ahotwxhfwj3n47m2g4r7pp header.b="e/0b7vmP";
+       dkim=pass header.i=@amazonses.com header.s=224i4yxa5dv7c2xz3womw6peuasteono header.b=fSF6BSDS;
+       spf=pass (google.com: domain of 0100019f8604a187-63f3b096-5223-41d7-8319-e4994b8c1925-000000@envelope.mail.lmstudio.ai designates 76.223.139.17 as permitted sender) smtp.mailfrom=0100019f8604a187-63f3b096-5223-41d7-8319-e4994b8c1925-000000@envelope.mail.lmstudio.ai;
+       dmarc=pass (p=NONE sp=NONE dis=NONE) header.from=mail.lmstudio.ai
+Return-Path: <0100019f8604a187-63f3b096-5223-41d7-8319-e4994b8c1925-000000@envelope.mail.lmstudio.ai>
+Received: from c139-17.smtp-out.amazonses.com (c139-17.smtp-out.amazonses.com. [76.223.139.17])
+        by mx.google.com with ESMTPS id 6a1803df08f44-907baa94e35si3640806d6.348.2026.07.21.11.51.18
+        for <gdamien00@gmail.com>
+        (version=TLS1_3 cipher=TLS_AES_128_GCM_SHA256 bits=128/128);
+        Tue, 21 Jul 2026 11:51:18 -0700 (PDT)
+Received-SPF: pass (google.com: domain of 0100019f8604a187-63f3b096-5223-41d7-8319-e4994b8c1925-000000@envelope.mail.lmstudio.ai designates 76.223.139.17 as permitted sender) client-ip=76.223.139.17;
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@mail.lmstudio.ai header.s=s4bggld756ahotwxhfwj3n47m2g4r7pp header.b="e/0b7vmP";
+       dkim=pass header.i=@amazonses.com header.s=224i4yxa5dv7c2xz3womw6peuasteono header.b=fSF6BSDS;
+       spf=pass (google.com: domain of 0100019f8604a187-63f3b096-5223-41d7-8319-e4994b8c1925-000000@envelope.mail.lmstudio.ai designates 76.223.139.17 as permitted sender) smtp.mailfrom=0100019f8604a187-63f3b096-5223-41d7-8319-e4994b8c1925-000000@envelope.mail.lmstudio.ai;
+       dmarc=pass (p=NONE sp=NONE dis=NONE) header.from=mail.lmstudio.ai
+DKIM-Signature: v=1; a=rsa-sha256; q=dns/txt; c=relaxed/simple;
+	s=s4bggld756ahotwxhfwj3n47m2g4r7pp; d=mail.lmstudio.ai;
+	t=1784659878;
+	h=Date:From:To:Cc:Message-ID:Subject:MIME-Version:Content-Type;
+	bh=S1PEe5PiM/A3TjHk687JexEi/CsCO5iKRYcX3PPoDcg=;
+	b=e/0b7vmPTBaA3Rap+rk7OdxB+jjmw+WUqex6fKiviKid5/GFD9K1RKvcdawooiMj
+	MRjVBUNrc2LJaegitw1cBfZ5j6fTiakccbKAwFTVMKocLTq3rQ9vXKZHX+gWgofHouE
+	I9ohk6cVpsy8KTZlV1itLcMg2fFseNf0WytlJAYtI5fcMKkk4VjctqhaHrDBzmtseU9
+	dKt/sDfhOZt0MOHg07lcLg+VTOk5I/kSGrnSz6XD74NOSpHT0IOLqY3+qxxd1NeFhFU
+	WRPHlHdjqMi9K4Vejw8wSJKLqr2dW0uBLNOb/kWig2fQ/H2prv573tsNDiFjfL9kFi+
+	ypMOxw3G0g==
+DKIM-Signature: v=1; a=rsa-sha256; q=dns/txt; c=relaxed/simple;
+	s=224i4yxa5dv7c2xz3womw6peuasteono; d=amazonses.com; t=1784659878;
+	h=Date:From:To:Cc:Message-ID:Subject:MIME-Version:Content-Type:Feedback-ID;
+	bh=S1PEe5PiM/A3TjHk687JexEi/CsCO5iKRYcX3PPoDcg=;
+	b=fSF6BSDSowaRUL1vUrVFEMI+lsRmBHz/1X3IHAWdVy/VAmf5Kzu4bBj+rHZPah8l
+	yCrz1WAAB/yhnmKR6Fj/VgPrnJHxRrIA1WRM7h4kuBm3wcmAy629+idU2UkIJgPOA4W
+	4ARhocNmvLR0nRpXudCnOO+sNuduZmj1FIgEImAQ=
+Date: Tue, 21 Jul 2026 18:51:18 +0000
+From: LM Studio <team@mail.lmstudio.ai>
+To: gdamien00@gmail.com
+Cc: 
+Message-ID: <0100019f8604a187-63f3b096-5223-41d7-8319-e4994b8c1925-000000@email.amazonses.com>
+Subject: Sign in to LM Studio Hub
+MIME-Version: 1.0
+Precedence: Bulk
+X-Auto-Response-Suppress: All
+Content-Type: multipart/alternative; boundary=876w0k4x8yb
+Feedback-ID: :1.us-east-1.O5zmgXOb5l6yNR6S+RoMLaceFIdzUkN4TA/fzDQsMFZCMH3iAxDU+ZvS4rQYDQ5qLjfnYzgvZv6Toqpa7KRX6+KAydaMcorY5cP/2jTwb6z65UJqj10Ff5TEozdkhsZCN21deQu0M9EW8hGTCsUBSYzNDH0Y1vMprnpvpczV698=:1.us-east-1.1nRXWOT+ETvogqnAUaOa7HjKGx1p40xVES7T8DfH/Gc=:AmazonSES
+X-SES-Outgoing: 2026.07.21-76.223.139.17
+
+--876w0k4x8yb
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: quoted-printable
+
+=C2=A0
+Hello -
+=C2=A0
+You requested a link for signing in to the LM Studio =
+Hub. Please click the link below to proceed:
+=C2=A0
+Sign in to LM Studio Hub
+[https://lmstudio.ai/login-confirmation?=
+token=3Dd2e24d98f08d8f5285a795e0d77469b25296942f99d906d8aa86db93a15fe88d&em=
+ail=3Dgdamien00%40gmail.com]
+=C2=A0
+Or, copy + paste this URL into your =
+browser:
+https://lmstudio.ai/login-confirmation?token=3Dd2e24d98f08d8f5285a=
+795e0d77469b25296942f99d906d8aa86db93a15fe88d&email=3Dgdamien00%40gmail.com
+
+This link will expire in 30 minutes.
+=C2=A0
+=E2=80=94 Team LM Studio =
+=F0=9F=91=BE
+=C2=A0
+
+--876w0k4x8yb
+Content-Type: text/html; charset=UTF-8
+Content-Transfer-Encoding: quoted-printable
+
+<!doctype html>
+<html lang=3D"en" dir=3D"auto" xmlns=3D"http://www.w3.=
+org/1999/xhtml" xmlns:v=3D"urn:schemas-microsoft-com:vml" =
+xmlns:o=3D"urn:schemas-microsoft-com:office:office" =
+style=3D"background-color: transparent;">
+  <head>
+    <title>Sign in to LM=
+ Studio Hub</title>
+    <!--[if !mso]><!-->
+    <meta =
+http-equiv=3D"X-UA-Compatible" content=3D"IE=3Dedge">
+    <!--<![endif]-->
+    <meta http-equiv=3D"Content-Type" content=3D"text/html; =
+charset=3DUTF-8">
+    <meta name=3D"viewport" content=3D"width=3Ddevice-wid=
+th, initial-scale=3D1">
+    <style type=3D"text/css">
+      #outlook a { padding:0; }
+      body { margin:0;padding:0;-webkit-tex=
+t-size-adjust:100%;-ms-text-size-adjust:100%; }
+      table, td { =
+border-collapse:collapse;mso-table-lspace:0pt;mso-table-rspace:0pt; }
+      img { border:0;height:auto;line-height:100%; outline:none;text-decora=
+tion:none;-ms-interpolation-mode:bicubic; }
+      p { =
+display:block;margin:13px 0; }
+    </style>
+    <!--[if mso]>
+    <noscript>
+    <xml>
+    <o:OfficeDocumentSettings>
+      <o:AllowPNG/>
+      <o:PixelsPerInch>96</o:PixelsPerInch>
+    </o:OfficeDocumentSettings>
+    </xml>
+    </noscript>
+    <![endif]-->
+    <!--[if lte mso 11]>
+    <style type=3D"text/css">
+      .mj-outlook-group-fix { width:100% !=
+important; }
+    </style>
+    <![endif]-->
+   =20
+   =20
+    <style type=3D"text/css">
+      @media only screen and =
+(min-width:480px) {
+        .mj-column-per-100 { width:100% !important; =
+max-width: 100%; }
+      }
+    </style>
+    <style media=3D"screen and =
+(min-width:480px)">
+      .moz-text-html .mj-column-per-100 { width:100% !=
+important; max-width: 100%; }
+    </style>
+   =20
+   =20
+ =20
+   =20
+    <style type=3D"text/css">
+
+    @media only screen and (max-width:479px)=
+ {
+      table.mj-full-width-mobile { width: 100% !important; }
+      td.mj-full-width-mobile { width: auto !important; }
+    }
+ =20
+    </style>
+    =20
+    <style type=3D"text/css">
+.wfix {
+          max-width: 600px !important;
+        }
+       =20
+        @media(max-width: 480px) {
+         =20
+          .body-image td  {=
+ max-width: 100% !important; }
+          .body-image img  { box-sizing: =
+border-box; }
+          .social-icon-mobile-spacer {
+            display: inline-block !important;
+          }
+        }
+       =20
+    .mobile-only { display: none !important; } .desktop-only { =
+display: block !important; }
+    @media(max-width: 480px) { .column-stack {=
+ width: 100% !important; max-width: 100% !important; display: block !=
+important; } .column-stack > table > tbody > tr > td,.column-stack > table =
+> tbody > tr > th { padding-left: 0 !important; padding-right: 0 !=
+important; } .mobile-only { display: block !important; } .desktop-only { =
+display: none !important; } }
+        @media (min-width: 481px) {
+      .column-row { display: table !important; table-layout: fixed; width: =
+100% !important; }
+      .column-row > .column-stack, .column-row > .=
+column-persist { display: table-cell !important; float: none !important; }
+    }
+    </style>
+    <style>
+          .wrapper {
+            padding: 0 12px;
+          }
+
+          /* Superhuman selector =
+*/
+          .ShadowHTML .wrapper {
+            padding: 0 !important;
+          }
+        =20
+        =20
+  .ShadowHTML .styleUnquotedContent .=
+unquoted-content a[href]:not(.sh-preserve-color), .ShadowHTML .=
+styleUnquotedContent .sh-unquoted-content a[href]:not(.sh-preserve-color), =
+.ShadowHTML .styleQuotedContent .sh-quoted-content a[href]:not(.=
+sh-preserve-color), .ShadowHTML .sh-signature a[href]:not(.=
+sh-preserve-color), .ShadowHTML .Signature-settings a[href]:not(.=
+sh-preserve-color) {
+    color: inherit;
+  }
+  .ShadowHTML .=
+styleUnquotedContent .unquoted-content .opt-in-explanation a[href]:not(.=
+sh-preserve-color), .ShadowHTML .styleUnquotedContent .sh-unquoted-content =
+.opt-in-explanation a[href]:not(.sh-preserve-color), .ShadowHTML .=
+styleQuotedContent .sh-quoted-content .opt-in-explanation a[href]:not(.=
+sh-preserve-color), .ShadowHTML .sh-signature .opt-in-explanation =
+a[href]:not(.sh-preserve-color), .ShadowHTML .Signature-settings .=
+opt-in-explanation a[href]:not(.sh-preserve-color) {
+    color: #9ca3af !important;
+    font-size: 12px !important;
+    line-height: 18px !important;
+  }
+
+        =20
+    .ShadowHTML .=
+styleUnquotedContent .unquoted-content *:not(.sh-preserve-line-height), .=
+ShadowHTML .styleUnquotedContent .sh-unquoted-content *:not(.=
+sh-preserve-line-height), .ShadowHTML .styleQuotedContent .=
+sh-quoted-content *:not(.sh-preserve-line-height), .ShadowHTML .=
+sh-signature *:not(.sh-preserve-line-height), .ShadowHTML .=
+Signature-settings *:not(.sh-preserve-line-height) {
+      line-height: 21px !important;
+    }
+    .ShadowHTML .=
+styleUnquotedContent .unquoted-content *:not(.sh-preserve-font-size), .=
+ShadowHTML .styleUnquotedContent .sh-unquoted-content *:not(.=
+sh-preserve-font-size), .ShadowHTML .styleQuotedContent .sh-quoted-content =
+*:not(.sh-preserve-font-size), .ShadowHTML .sh-signature *:not(.=
+sh-preserve-font-size), .ShadowHTML .Signature-settings *:not(.=
+sh-preserve-font-size) {
+      font-size: 14px !important;
+    }
+    .ShadowHTML .styleUnquotedContent .unquoted-content *:not(.=
+sh-preserve-font-family), .ShadowHTML .styleUnquotedContent .=
+sh-unquoted-content *:not(.sh-preserve-font-family), .ShadowHTML .=
+styleQuotedContent .sh-quoted-content *:not(.sh-preserve-font-family), .=
+ShadowHTML .sh-signature *:not(.sh-preserve-font-family), .ShadowHTML .=
+Signature-settings *:not(.sh-preserve-font-family) {
+      font-family: ui-sans-serif, sans-serif !important;
+    }
+ =20
+    .ShadowHTML .styleUnquotedContent .unquoted-content h1 *:not(.=
+sh-preserve-line-height), .ShadowHTML .styleUnquotedContent .=
+sh-unquoted-content h1 *:not(.sh-preserve-line-height), .ShadowHTML .=
+styleQuotedContent .sh-quoted-content h1 *:not(.sh-preserve-line-height), .=
+ShadowHTML .sh-signature h1 *:not(.sh-preserve-line-height), .ShadowHTML .=
+Signature-settings h1 *:not(.sh-preserve-line-height) {
+      line-height: 35px !important;
+    }
+    .ShadowHTML .=
+styleUnquotedContent .unquoted-content h1 *:not(.sh-preserve-font-size), .=
+ShadowHTML .styleUnquotedContent .sh-unquoted-content h1 *:not(.=
+sh-preserve-font-size), .ShadowHTML .styleQuotedContent .sh-quoted-content =
+h1 *:not(.sh-preserve-font-size), .ShadowHTML .sh-signature h1 *:not(.=
+sh-preserve-font-size), .ShadowHTML .Signature-settings h1 *:not(.=
+sh-preserve-font-size) {
+      font-size: 28px !important;
+    }
+    .ShadowHTML .styleUnquotedContent .unquoted-content h1 *:not(.=
+sh-preserve-font-family), .ShadowHTML .styleUnquotedContent .=
+sh-unquoted-content h1 *:not(.sh-preserve-font-family), .ShadowHTML .=
+styleQuotedContent .sh-quoted-content h1 *:not(.sh-preserve-font-family), .=
+ShadowHTML .sh-signature h1 *:not(.sh-preserve-font-family), .ShadowHTML .=
+Signature-settings h1 *:not(.sh-preserve-font-family) {
+      font-family: ui-sans-serif, sans-serif !important;
+    }
+ =20
+    .ShadowHTML .styleUnquotedContent .unquoted-content h2 *:not(.=
+sh-preserve-line-height), .ShadowHTML .styleUnquotedContent .=
+sh-unquoted-content h2 *:not(.sh-preserve-line-height), .ShadowHTML .=
+styleQuotedContent .sh-quoted-content h2 *:not(.sh-preserve-line-height), .=
+ShadowHTML .sh-signature h2 *:not(.sh-preserve-line-height), .ShadowHTML .=
+Signature-settings h2 *:not(.sh-preserve-line-height) {
+      line-height: 30px !important;
+    }
+    .ShadowHTML .=
+styleUnquotedContent .unquoted-content h2 *:not(.sh-preserve-font-size), .=
+ShadowHTML .styleUnquotedContent .sh-unquoted-content h2 *:not(.=
+sh-preserve-font-size), .ShadowHTML .styleQuotedContent .sh-quoted-content =
+h2 *:not(.sh-preserve-font-size), .ShadowHTML .sh-signature h2 *:not(.=
+sh-preserve-font-size), .ShadowHTML .Signature-settings h2 *:not(.=
+sh-preserve-font-size) {
+      font-size: 24px !important;
+    }
+    .ShadowHTML .styleUnquotedContent .unquoted-content h2 *:not(.=
+sh-preserve-font-family), .ShadowHTML .styleUnquotedContent .=
+sh-unquoted-content h2 *:not(.sh-preserve-font-family), .ShadowHTML .=
+styleQuotedContent .sh-quoted-content h2 *:not(.sh-preserve-font-family), .=
+ShadowHTML .sh-signature h2 *:not(.sh-preserve-font-family), .ShadowHTML .=
+Signature-settings h2 *:not(.sh-preserve-font-family) {
+      font-family: ui-sans-serif, sans-serif !important;
+    }
+ =20
+    .ShadowHTML .styleUnquotedContent .unquoted-content h3 *:not(.=
+sh-preserve-line-height), .ShadowHTML .styleUnquotedContent .=
+sh-unquoted-content h3 *:not(.sh-preserve-line-height), .ShadowHTML .=
+styleQuotedContent .sh-quoted-content h3 *:not(.sh-preserve-line-height), .=
+ShadowHTML .sh-signature h3 *:not(.sh-preserve-line-height), .ShadowHTML .=
+Signature-settings h3 *:not(.sh-preserve-line-height) {
+      line-height: 25px !important;
+    }
+    .ShadowHTML .=
+styleUnquotedContent .unquoted-content h3 *:not(.sh-preserve-font-size), .=
+ShadowHTML .styleUnquotedContent .sh-unquoted-content h3 *:not(.=
+sh-preserve-font-size), .ShadowHTML .styleQuotedContent .sh-quoted-content =
+h3 *:not(.sh-preserve-font-size), .ShadowHTML .sh-signature h3 *:not(.=
+sh-preserve-font-size), .ShadowHTML .Signature-settings h3 *:not(.=
+sh-preserve-font-size) {
+      font-size: 20px !important;
+    }
+    .ShadowHTML .styleUnquotedContent .unquoted-content h3 *:not(.=
+sh-preserve-font-family), .ShadowHTML .styleUnquotedContent .=
+sh-unquoted-content h3 *:not(.sh-preserve-font-family), .ShadowHTML .=
+styleQuotedContent .sh-quoted-content h3 *:not(.sh-preserve-font-family), .=
+ShadowHTML .sh-signature h3 *:not(.sh-preserve-font-family), .ShadowHTML .=
+Signature-settings h3 *:not(.sh-preserve-font-family) {
+      font-family: ui-sans-serif, sans-serif !important;
+    }
+ =20
+    .styleUnquotedContent .unquoted-content *:not(.sh-preserve-font-size) =
+h1 *, .styleUnquotedContent .sh-unquoted-content *:not(.=
+sh-preserve-font-size) h1 *, .styleQuotedContent .sh-quoted-content *:not(.=
+sh-preserve-font-size) h1 *, .sh-signature *:not(.sh-preserve-font-size) h1=
+ *, .Signature-settings *:not(.sh-preserve-font-size) h1 * {
+      font-size: 28px !important;
+    }
+
+    .ShadowHTML .=
+styleUnquotedContent .unquoted-content h1 *:not(.sh-preserve-line-height), =
+.ShadowHTML .styleUnquotedContent .sh-unquoted-content h1 *:not(.=
+sh-preserve-line-height), .ShadowHTML .styleQuotedContent .=
+sh-quoted-content h1 *:not(.sh-preserve-line-height), .ShadowHTML .=
+sh-signature h1 *:not(.sh-preserve-line-height), .ShadowHTML .=
+Signature-settings h1 *:not(.sh-preserve-line-height) {
+      line-height: 35px !important;
+    }
+ =20
+    .styleUnquotedContent .=
+unquoted-content *:not(.sh-preserve-font-size) h2 *, .styleUnquotedContent =
+.sh-unquoted-content *:not(.sh-preserve-font-size) h2 *, .=
+styleQuotedContent .sh-quoted-content *:not(.sh-preserve-font-size) h2 *, .=
+sh-signature *:not(.sh-preserve-font-size) h2 *, .Signature-settings *:not(=
+.sh-preserve-font-size) h2 * {
+      font-size: 24px !important;
+    }
+
+    .ShadowHTML .styleUnquotedContent .unquoted-content h2 *:not(.=
+sh-preserve-line-height), .ShadowHTML .styleUnquotedContent .=
+sh-unquoted-content h2 *:not(.sh-preserve-line-height), .ShadowHTML .=
+styleQuotedContent .sh-quoted-content h2 *:not(.sh-preserve-line-height), .=
+ShadowHTML .sh-signature h2 *:not(.sh-preserve-line-height), .ShadowHTML .=
+Signature-settings h2 *:not(.sh-preserve-line-height) {
+      line-height: 30px !important;
+    }
+ =20
+    .styleUnquotedContent .=
+unquoted-content *:not(.sh-preserve-font-size) h3 *, .styleUnquotedContent =
+.sh-unquoted-content *:not(.sh-preserve-font-size) h3 *, .=
+styleQuotedContent .sh-quoted-content *:not(.sh-preserve-font-size) h3 *, .=
+sh-signature *:not(.sh-preserve-font-size) h3 *, .Signature-settings *:not(=
+.sh-preserve-font-size) h3 * {
+      font-size: 20px !important;
+    }
+
+    .ShadowHTML .styleUnquotedContent .unquoted-content h3 *:not(.=
+sh-preserve-line-height), .ShadowHTML .styleUnquotedContent .=
+sh-unquoted-content h3 *:not(.sh-preserve-line-height), .ShadowHTML .=
+styleQuotedContent .sh-quoted-content h3 *:not(.sh-preserve-line-height), .=
+ShadowHTML .sh-signature h3 *:not(.sh-preserve-line-height), .ShadowHTML .=
+Signature-settings h3 *:not(.sh-preserve-line-height) {
+      line-height: 25px !important;
+    }
+ =20
+        =20
+  .ShadowHTML :is(.styleUnquotedContent .unquoted-content, .=
+styleUnquotedContent .sh-unquoted-content, .styleQuotedContent .=
+sh-quoted-content, .sh-signature, .Signature-settings) :is(td.=
+column-container, div[class^=3D"mj-column-per-"]){font-size:0!important}
+  html.sh-color :is(td.column-container, div[class^=3D"mj-column-per-"], =
+div.mj-column-per-100.mj-outlook-group-fix){font-size:0!important}
+  @media(max-width:480px){
+    html.sh-color .column-stack{width:100%!=
+important;max-width:100%!important;display:block!important}
+    html.sh-color :is(.column-stack > table > tbody > tr > td,.column-stack=
+ > table > tbody > tr > th){padding-left:0!important;padding-right:0!=
+important;width:100%!important;max-width:100%!important;display:block!=
+important}
+    html.sh-color :is(.column-stack, .column-stack =
+*){word-break:break-word!important;overflow-wrap:anywhere!important}
+    html.sh-color :is(.column-persist, .column-persist =
+*){word-break:break-word!important;overflow-wrap:anywhere!important}
+  }
+  html.sh-color a[href^=3D"tel:"]{color:inherit!important;text-decoration:n=
+one!important;font-size:inherit!important;line-height:inherit!=
+important;letter-spacing:inherit!important;vertical-align:baseline!=
+important}
+
+        =20
+        =20
+  .ShadowHTML .styleUnquotedContent .=
+unquoted-content .social-icons *:not(.sh-preserve-font-size), .ShadowHTML .=
+styleUnquotedContent .sh-unquoted-content .social-icons *:not(.=
+sh-preserve-font-size), .ShadowHTML .styleQuotedContent .sh-quoted-content =
+.social-icons *:not(.sh-preserve-font-size), .ShadowHTML .sh-signature .=
+social-icons *:not(.sh-preserve-font-size), .ShadowHTML .Signature-settings=
+ .social-icons *:not(.sh-preserve-font-size) {
+    font-size: unset !=
+important;
+  }
+
+         [class~=3D"x_social-icon-dark-mode"] { display: =
+none !important; mso-hide:all;  width: 0px !important; padding: 0px !=
+important; }
+
+          /* Gmail selectors */
+          u + .body .wrapper =
+{
+            padding: 0 !important;
+          }
+          div > u + .body =
+.wrapper {
+            padding: 0 !important;
+          }
+         =20
+    a { text-decoration: none; color: inherit; }
+    @media =
+(prefers-color-scheme: dark) {
+    a {=20
+    color: inherit;
+   }
+  }
+ =20
+         =20
+   =20
+  .Theme-carbon .divider.dark-force p { border-color: =
+#ffffff !important; }
+  .Theme-carbon .powered-by-image-dark { display: =
+block !important; }
+  .Theme-carbon .powered-by-image { display: none !=
+important; }
+  .Theme-carbon .social-icon.social-icon-hide-dark-mode { =
+display: none !important; }
+  .Theme-carbon .social-icon-dark-mode { =
+display: block !important; }
+  .Theme-carbon * { color: #ffffff !important;=
+ }
+  .Theme-carbon td.code-node code span { color: inherit !important; }
+
+   =20
+  .Theme-carbon .styleQuotedContent.styleUnquotedContent .=
+sh-color-grey.link-custom-footer-dark-force, .Theme-carbon .Editor-inner .=
+sh-color-grey.link-custom-footer-dark-force, .Theme-carbon .=
+Signature-settings .sh-color-grey.link-custom-footer-dark-force {
+    color: #ffffff !important;
+  }
+
+    @media (prefers-color-scheme: dark)=
+ {
+     =20
+#root[data-shadow-root-container-id] .body { background-color: =
+Canvas !important; }
+td.dark-force div { color: #FFFFFF !important; }
+span.dark-force { color:#FFFFFF !important; }
+a.dark-force, a.dark-force =
+span { color: #FFFFFF; }
+h1.dark-force, h1.dark-force > span,
+h2.dark-force, h2.dark-force > span,
+h3.dark-force, h3.dark-force > span { =
+color: #FFFFFF; }
+.divider.dark-force p { border-color: #FFFFFF !important;=
+ }
+.powered-by-image { display: none !important; }
+.powered-by-image-dark {=
+ display: block !important; }
+.social-icon.social-icon-hide-dark-mode { =
+display: none !important; }
+.social-icon-dark-mode { display: block !=
+important; }
+.link-custom-footer-dark-force { color: #FFFFFF !important; }
+.code { background-color: rgb(243, 244, 246, 0.2) !important; }
+.powered-by-loops-text a.dark-force, .powered-by-loops-text a.dark-force =
+span { color:#FFFFFF !important; }
+
+[class~=3D"x_email-body"] td.dark-force=
+ div { color: #000000 !important; }
+[class~=3D"x_email-body"] span.=
+dark-force { color:#000000 !important; }
+[class~=3D"x_email-body"] a.=
+dark-force, [class~=3D"x_email-body"] a.dark-force span { color: #000000; }
+[class~=3D"x_email-body"] h1.dark-force, [class~=3D"x_email-body"] h1.=
+dark-force > span,
+[class~=3D"x_email-body"] h2.dark-force, =
+[class~=3D"x_email-body"] h2.dark-force > span,
+[class~=3D"x_email-body"] =
+h3.dark-force, [class~=3D"x_email-body"] h3.dark-force > span { color: =
+#000000; }
+[class~=3D"x_email-body"] .divider.dark-force p { border-color: =
+#000000 !important; }
+[class~=3D"x_email-body"] .powered-by-image { =
+display: none !important; }
+[class~=3D"x_email-body"] .=
+powered-by-image-dark { display: block !important; }
+[class~=3D"x_email-body"] .social-icon.social-icon-hide-dark-mode { =
+display: none !important; }
+[class~=3D"x_email-body"] .=
+social-icon-dark-mode { display: block !important; }
+[class~=3D"x_email-body"] .link-custom-footer-dark-force { color: #000000 !=
+important; }
+[class~=3D"x_email-body"] .code { background-color: rgb(243, =
+244, 246, 0.2) !important; }
+[class~=3D"x_email-body"] .=
+powered-by-loops-text a.dark-force, [class~=3D"x_email-body"] .=
+powered-by-loops-text a.dark-force span { color:#000000 !important; }
+
+
+    }
+         =20
+          .link-unsubscribe { color: #9ca3af !important;=
+ }
+          </style>
+<meta name=3D"color-scheme" content=3D"light dark">
+          <meta name=3D"supported-color-schemes" content=3D"light dark">
+  </head>
+ =20
+      <body class=3D"body email-body" =
+style=3D"word-spacing:normal;background-color:transparent;">
+       =20
+    <div style=3D"display:none;font-size:1px;color:#ffffff;line-height:1px;=
+max-height:0px;max-width:0px;opacity:0;overflow:hidden;"></div>
+ =20
+        <div aria-label=3D"Sign in to LM Studio Hub" =
+aria-roledescription=3D"email" role=3D"article" lang=3D"en" dir=3D"auto" =
+style=3D"word-spacing:normal;background-color:transparent;">
+       =20
+        <!--[if mso]><style type=3D"text/css"> a { text-decoration: =
+underline !important; } .button a { text-decoration: none !important; } .=
+outlook-list-fix { margin-left:4px !important; } .outlook-break-full-link {=
+ word-break: break-all !important; } .outlook-hide-social-icon { display: =
+none !important; mso-hide:all; width: 0px !important; padding: 0px !=
+important; } .outlook-hide-social-icon * { display: none !important; =
+mso-hide:all; width: 0px !important; padding: 0px !important; } .=
+outlook-hide-social-icon table { display: none !important; mso-hide:all; =
+width: 0px !important; padding: 0px !important; } .outlook-hide-social-icon=
+ tbody { display: none !important; mso-hide:all; width: 0px !important; =
+padding: 0px !important; } .outlook-hide-social-icon tr { display: none !=
+important; mso-hide:all; width: 0px !important; padding: 0px !important; } =
+.outlook-hide-social-icon td { display: none !important; mso-hide:all; =
+width: 0px !important; padding: 0px !important; } .outlook-hide-social-icon=
+ img { display: none !important; mso-hide:all; width: 0px !important; =
+padding: 0px !important; } .outlook-hide-social-icon a { display: none !=
+important; mso-hide:all; width: 0px !important; padding: 0px !important; }
+</style><table align=3D"middle" border=3D"0" cellpadding=3D"0" =
+cellspacing=3D"0" class=3D"wfix-outlook gmail-no-padding-outlook =
+wrapper-outlook" role=3D"presentation" style=3D"width:600px;" width=3D"600"=
+ ><tr><td style=3D"line-height:0px;font-size:0px;mso-line-height-rule:exact=
+ly;"><![endif]-->
+   =20
+     =20
+      <div class=3D"wfix gmail-no-padding=
+ wrapper" style=3D"margin:0px auto;max-width:600px;">
+       =20
+        <table align=3D"middle" border=3D"0" cellpadding=3D"0" =
+cellspacing=3D"0" role=3D"presentation" style=3D"width:100%;">
+          <tbody>
+            <tr>
+              <td =
+style=3D"direction:ltr;font-size:0px;padding:20px 0;padding-top:0;text-alig=
+n:center;">
+                <!--[if mso | IE]><table role=3D"presentation" =
+border=3D"0" cellpadding=3D"0" cellspacing=3D"0"><tr><td =
+class=3D"wfix-outlook" width=3D"600px" ><table align=3D"middle" =
+border=3D"0" cellpadding=3D"0" cellspacing=3D"0" class=3D"wfix-outlook" =
+role=3D"presentation" style=3D"width:600px;" width=3D"600" ><tr><td =
+style=3D"line-height:0px;font-size:0px;mso-line-height-rule:exactly;"><!=
+[endif]-->
+   =20
+     =20
+      <div class=3D"wfix" style=3D"margin:0px =
+auto;max-width:600px;">
+       =20
+        <table align=3D"middle" =
+border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" =
+style=3D"width:100%;">
+          <tbody>
+            <tr>
+              <td style=3D"direction:ltr;font-size:0px;padding:20px =
+0;padding-bottom:0px;padding-left:0px;padding-right:0px;padding-top:0px;tex=
+t-align:center;">
+                <!--[if mso | IE]><table =
+role=3D"presentation" border=3D"0" cellpadding=3D"0" =
+cellspacing=3D"0"><tr><td align=3D"middle" class=3D"wfix-outlook =
+rounded-corners-outlook styled-primary-column-outlook" =
+style=3D"vertical-align:top;width:600px;" ><![endif]-->
+           =20
+      <div class=3D"mj-column-per-100 mj-outlook-group-fix wfix =
+rounded-corners styled-primary-column" style=3D"font-size:0px;text-align:le=
+ft;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+       =20
+      <table border=3D"0" cellpadding=3D"0" cellspacing=3D"0" =
+role=3D"presentation" width=3D"100%" style=3D"border-collapse: separate;">
+        <tbody>
+          <tr>
+            <td style=3D"background-color:tr=
+ansparent;border-radius:4px;vertical-align:top;border-collapse:separate;pad=
+ding-top:0px;padding-right:0px;padding-bottom:0px;padding-left:0px;">
+             =20
+      <table border=3D"0" cellpadding=3D"0" =
+cellspacing=3D"0" role=3D"presentation" style width=3D"100%">
+        <tbody>
+         =20
+              <tr>
+                <td =
+align=3D"left" class=3D"dark-force" style=3D"font-size:0px;padding:10px =
+25px;padding-top:0px;padding-right:0px;padding-bottom:0px;padding-left:0px;=
+word-break:break-word;">
+                 =20
+      <div =
+style=3D"font-family:ui-sans-serif, sans-serif;font-size:14px;letter-spacin=
+g:0px;line-height:21px !important;text-align:left;color:inherit;"><span>&nb=
+sp;</span></div>
+   =20
+                </td>
+              </tr>
+           =20
+              <tr>
+                <td align=3D"left" =
+class=3D"dark-force" style=3D"font-size:0px;padding:10px =
+25px;padding-top:0px;padding-right:0px;padding-bottom:0px;padding-left:0px;=
+word-break:break-word;">
+                 =20
+      <div =
+style=3D"font-family:ui-sans-serif, sans-serif;font-size:14px;letter-spacin=
+g:0px;line-height:21px !important;text-align:left;color:inherit;"><span =
+style=3D"line-height: 21px !important; font-size: 14px; font-size: 14px !=
+important; white-space: pre-wrap;">Hello -</span></div>
+   =20
+                </td>
+              </tr>
+           =20
+              <tr>
+                <td align=3D"left" class=3D"dark-force" =
+style=3D"font-size:0px;padding:10px 25px;padding-top:0px;padding-right:0px;=
+padding-bottom:0px;padding-left:0px;word-break:break-word;">
+                 =20
+      <div style=3D"font-family:ui-sans-serif, =
+sans-serif;font-size:14px;letter-spacing:0px;line-height:21px !=
+important;text-align:left;color:inherit;"><span>&nbsp;</span></div>
+   =20
+                </td>
+              </tr>
+           =20
+              <tr>
+                <td align=3D"left" class=3D"dark-force" =
+style=3D"font-size:0px;padding:10px 25px;padding-top:0px;padding-right:0px;=
+padding-bottom:0px;padding-left:0px;word-break:break-word;">
+                 =20
+      <div style=3D"font-family:ui-sans-serif, =
+sans-serif;font-size:14px;letter-spacing:0px;line-height:21px !=
+important;text-align:left;color:inherit;"><span style=3D"line-height: 21px =
+!important; font-size: 14px; font-size: 14px !important; white-space: =
+pre-wrap;">You requested a link for signing in to the LM Studio Hub. Please=
+ click the link below to proceed:</span></div>
+   =20
+                </td>
+              </tr>
+           =20
+              <tr>
+                <td align=3D"left" class=3D"dark-force" =
+style=3D"font-size:0px;padding:10px 25px;padding-top:0px;padding-right:0px;=
+padding-bottom:0px;padding-left:0px;word-break:break-word;">
+                 =20
+      <div style=3D"font-family:ui-sans-serif, =
+sans-serif;font-size:14px;letter-spacing:0px;line-height:21px !=
+important;text-align:left;color:inherit;"><span>&nbsp;</span></div>
+   =20
+                </td>
+              </tr>
+           =20
+              <tr>
+                <td align=3D"left" class=3D"dark-force" =
+style=3D"font-size:0px;padding:10px 25px;padding-top:0px;padding-right:0px;=
+padding-bottom:0px;padding-left:0px;word-break:break-word;">
+                 =20
+      <div style=3D"font-family:ui-sans-serif, =
+sans-serif;font-size:14px;letter-spacing:0px;line-height:21px !=
+important;text-align:left;color:inherit;"><a target=3D"_blank" =
+rel=3D"noopener noreferrer" class=3D"body-link" href=3D"https://lmstudio.=
+ai/login-confirmation?token=3Dd2e24d98f08d8f5285a795e0d77469b25296942f99d90=
+6d8aa86db93a15fe88d&email=3Dgdamien00%40gmail.com" style=3D"text-decoration=
+: none; color: inherit;"><span style=3D"font-weight: 600; color: #0000FF; =
+font-size: 14px; white-space: pre-wrap; text-decoration: underline !=
+important; line-height: 21px !important; font-size: 14px !important;" =
+class=3D"bold underline dark-force">Sign in to LM Studio =
+Hub</span></a></div>
+   =20
+                </td>
+              </tr>
+           =20
+              <tr>
+                <td align=3D"left" =
+class=3D"dark-force" style=3D"font-size:0px;padding:10px =
+25px;padding-top:0px;padding-right:0px;padding-bottom:0px;padding-left:0px;=
+word-break:break-word;">
+                 =20
+      <div =
+style=3D"font-family:ui-sans-serif, sans-serif;font-size:14px;letter-spacin=
+g:0px;line-height:21px !important;text-align:left;color:inherit;"><span>&nb=
+sp;</span></div>
+   =20
+                </td>
+              </tr>
+           =20
+              <tr>
+                <td align=3D"left" =
+class=3D"dark-force" style=3D"font-size:0px;padding:10px =
+25px;padding-top:0px;padding-right:0px;padding-bottom:0px;padding-left:0px;=
+word-break:break-word;">
+                 =20
+      <div =
+style=3D"font-family:ui-sans-serif, sans-serif;font-size:12px;letter-spacin=
+g:0px;line-height:18px !important;text-align:left;color:inherit;"><span =
+style=3D"color: #595959; line-height: 18px !important; font-size: 12px; =
+font-size: 12px !important; white-space: pre-wrap;">Or, copy + paste this =
+URL into your browser: </span></div>
+   =20
+                </td>
+              </tr>
+           =20
+              <tr>
+                <td align=3D"left" class=3D"dark-force" =
+style=3D"font-size:0px;padding:10px 25px;padding-top:0px;padding-right:0px;=
+padding-bottom:0px;padding-left:0px;word-break:break-word;">
+                 =20
+      <div style=3D"font-family:ui-sans-serif, =
+sans-serif;font-size:12px;letter-spacing:0px;line-height:18px !=
+important;text-align:left;color:inherit;"><span style=3D"color: #5d5d5d; =
+font-size: 12px; white-space: pre-wrap; text-decoration: underline !=
+important; line-height: 18px !important; font-size: 12px !important;" =
+class=3D"underline">https://lmstudio.ai/login-confirmation?=
+token=3Dd2e24d98f08d8f5285a795e0d77469b25296942f99d906d8aa86db93a15fe88d&em=
+ail=3Dgdamien00%40gmail.com</span></div>
+   =20
+                </td>
+              </tr>
+           =20
+              <tr>
+                <td align=3D"left" class=3D"dark-force" =
+style=3D"font-size:0px;padding:10px 25px;padding-top:0px;padding-right:0px;=
+padding-bottom:0px;padding-left:0px;word-break:break-word;">
+                 =20
+      <div style=3D"font-family:ui-sans-serif, =
+sans-serif;font-size:14px;letter-spacing:0px;line-height:21px !=
+important;text-align:left;color:inherit;"><br><span style=3D"line-height: =
+21px !important; font-size: 14px; font-size: 14px !important; white-space: =
+pre-wrap;">This link will expire in </span><span style=3D"line-height: 21px=
+ !important; font-size: 14px; font-size: 14px !important; white-space: =
+pre-wrap;">30 minutes</span><span style=3D"line-height: 21px !important; =
+font-size: 14px; font-size: 14px !important; white-space: pre-wrap;">. =
+</span></div>
+   =20
+                </td>
+              </tr>
+           =20
+              <tr>
+                <td align=3D"left" =
+class=3D"dark-force" style=3D"font-size:0px;padding:10px =
+25px;padding-top:0px;padding-right:0px;padding-bottom:0px;padding-left:0px;=
+word-break:break-word;">
+                 =20
+      <div =
+style=3D"font-family:ui-sans-serif, sans-serif;font-size:14px;letter-spacin=
+g:0px;line-height:21px !important;text-align:left;color:inherit;"><span>&nb=
+sp;</span></div>
+   =20
+                </td>
+              </tr>
+           =20
+              <tr>
+                <td align=3D"left" =
+class=3D"dark-force" style=3D"font-size:0px;padding:10px =
+25px;padding-top:0px;padding-right:0px;padding-bottom:0px;padding-left:0px;=
+word-break:break-word;">
+                 =20
+      <div =
+style=3D"font-family:ui-sans-serif, sans-serif;font-size:14px;letter-spacin=
+g:0px;line-height:21px !important;text-align:left;color:inherit;"><span =
+style=3D"line-height: 21px !important; font-size: 14px; font-size: 14px !=
+important; white-space: pre-wrap;">=E2=80=94 Team LM Studio =
+=F0=9F=91=BE</span></div>
+   =20
+                </td>
+              </tr>
+           =20
+              <tr>
+                <td align=3D"left" =
+class=3D"dark-force" style=3D"font-size:0px;padding:10px =
+25px;padding-top:0px;padding-right:0px;padding-bottom:0px;padding-left:0px;=
+word-break:break-word;">
+                 =20
+      <div =
+style=3D"font-family:ui-sans-serif, sans-serif;font-size:14px;letter-spacin=
+g:0px;line-height:21px !important;text-align:left;color:inherit;"><span>&nb=
+sp;</span></div>
+   =20
+                </td>
+              </tr>
+           =20
+        </tbody>
+      </table>
+   =20
+            </td>
+          </tr>
+        </tbody>
+      </table>
+   =20
+      </div>
+   =20
+          <!--[if mso | IE]></td></tr></table><![endif]-->
+              </td>
+            </tr>
+          </tbody>
+        </table>
+       =20
+      </div>
+   =20
+     =20
+      <!--[if mso | =
+IE]></td></tr></table></td></tr></table><![endif]-->
+              </td>
+            </tr>
+          </tbody>
+        </table>
+       =20
+      </div>
+   =20
+     =20
+      <!--[if mso | IE]></td></tr></table><!=
+[endif]-->
+   =20
+   =20
+      </div>
+      </body>
+   =20
+</html>
+ =20
+
+--876w0k4x8yb--
