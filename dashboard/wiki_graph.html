@@ -275,11 +275,22 @@
             "buchhaltung": { background: "rgba(16,185,129,0.2)", border: "#10b981", highlight: { background: "rgba(16,185,129,0.4)", border: "#34d399" } },
             "workflow": { background: "rgba(245,158,11,0.2)", border: "#f59e0b", highlight: { background: "rgba(245,158,11,0.4)", border: "#fbbf24" } },
             "erkenntnis": { background: "rgba(59,130,246,0.2)", border: "#3b82f6", highlight: { background: "rgba(59,130,246,0.4)", border: "#60a5fa" } },
-            "allgemein": { background: "rgba(148,163,184,0.2)", border: "#94a3b8", highlight: { background: "rgba(148,163,184,0.4)", border: "#cbd5e1" } }
+            "allgemein": { background: "rgba(148,163,184,0.2)", border: "#94a3b8", highlight: { background: "rgba(148,163,184,0.4)", border: "#cbd5e1" } },
+            "lieferant": { background: "rgba(236,72,153,0.2)", border: "#ec4899", highlight: { background: "rgba(236,72,153,0.4)", border: "#f472b6" } },
+            "kunde": { background: "rgba(20,184,166,0.2)", border: "#14b8a6", highlight: { background: "rgba(20,184,166,0.4)", border: "#2dd4bf" } },
+            "artikelart": { background: "rgba(168,85,247,0.2)", border: "#a855f7", highlight: { background: "rgba(168,85,247,0.4)", border: "#c084fc" } },
+            "prüfung": { background: "rgba(239,68,68,0.2)", border: "#ef4444", highlight: { background: "rgba(239,68,68,0.4)", border: "#f87171" } },
+            "receipt": { background: "rgba(100,116,139,0.2)", border: "#64748b", highlight: { background: "rgba(100,116,139,0.4)", border: "#94a3b8" } },
+            "skr03": { background: "rgba(234,179,8,0.2)", border: "#eab308", highlight: { background: "rgba(234,179,8,0.4)", border: "#facc15" } }
         };
+
+        let graphNodesData = [];
+        let graphEdgesData = [];
+        let graphWarnings = [];
 
         window.onload = async function() {
             await loadGraphData();
+            setupFilters();
         }
 
         async function loadGraphData() {
@@ -294,84 +305,29 @@
                 // 2. Fetch network graph nodes and edges
                 const graphResponse = await fetch("/api/wiki-graph");
                 const graphData = await graphResponse.json();
-
-                // 3. Render vis-network
-                const container = document.getElementById("network");
+                graphNodesData = graphData.nodes;
+                graphEdgesData = graphData.edges;
+                graphWarnings = graphData.warnings || [];
                 
-                // Process node options with colors
-                const styledNodes = graphData.nodes.map(node => {
-                    const group = node.group ? node.group.toLowerCase() : "allgemein";
-                    const colorSet = groupColors[group] || groupColors["allgemein"];
-                    
-                    return {
-                        id: node.id,
-                        label: node.label,
-                        shape: "box",
-                        font: {
-                            color: "#f8fafc",
-                            face: "Inter",
-                            size: 14,
-                            bold: { color: "#f8fafc" }
-                        },
-                        margin: 10,
-                        borderWidth: 1.5,
-                        color: {
-                            background: colorSet.background,
-                            border: colorSet.border,
-                            highlight: colorSet.highlight
-                        },
-                        shadow: {
-                            enabled: true,
-                            color: "rgba(0,0,0,0.4)",
-                            size: 6,
-                            x: 2,
-                            y: 2
-                        }
-                    };
-                });
+                // Show warnings counter if applicable
+                if (graphWarnings.length > 0) {
+                    const warningDiv = document.createElement("div");
+                    warningDiv.style.position = "absolute";
+                    warningDiv.style.top = "10px";
+                    warningDiv.style.right = "10px";
+                    warningDiv.style.background = "rgba(239, 68, 68, 0.2)";
+                    warningDiv.style.border = "1px solid #ef4444";
+                    warningDiv.style.color = "#fca5a5";
+                    warningDiv.style.padding = "4px 8px";
+                    warningDiv.style.borderRadius = "8px";
+                    warningDiv.style.fontSize = "12px";
+                    warningDiv.style.zIndex = "100";
+                    warningDiv.textContent = `⚠️ ${graphWarnings.length} Warnings`;
+                    warningDiv.title = graphWarnings.map(w => `${w.code}: ${w.message || w.target || w.beleg_id}`).join("\n");
+                    document.querySelector('.graph-panel').appendChild(warningDiv);
+                }
 
-                const data = {
-                    nodes: new vis.DataSet(styledNodes),
-                    edges: new vis.DataSet(graphData.edges.map(edge => ({
-                        from: edge.from,
-                        to: edge.to,
-                        arrows: "to",
-                        color: { color: "rgba(99, 102, 241, 0.4)", highlight: "#6366f1" },
-                        width: 1.5
-                    })))
-                };
-
-                const options = {
-                    interaction: {
-                        hover: true,
-                        tooltipDelay: 200
-                    },
-                    physics: {
-                        barnesHut: {
-                            gravitationalConstant: -1800,
-                            centralGravity: 0.15,
-                            springLength: 120,
-                            springConstant: 0.04,
-                            damping: 0.09
-                        },
-                        stabilization: {
-                            iterations: 150
-                        }
-                    }
-                };
-
-                network = new vis.Network(container, data, options);
-
-                // Event listener on node selection
-                network.on("selectNode", function(params) {
-                    if (params.nodes.length > 0) {
-                        showNodeDetails(params.nodes[0]);
-                    }
-                });
-
-                network.on("deselectNode", function() {
-                    hideNodeDetails();
-                });
+                renderGraph(false);
 
             } catch (error) {
                 console.error("Fehler beim Laden des Wiki-Graphen:", error);
@@ -379,15 +335,291 @@
             }
         }
 
-        function showNodeDetails(slug) {
-            const page = allPages[slug];
-            if (!page) return;
+        function renderGraph(showReceipts = false, searchTerm = "", typeFilter = "") {
+            const container = document.getElementById("network");
+
+            let filteredNodes = graphNodesData;
+
+            if (!showReceipts) {
+                filteredNodes = filteredNodes.filter(n => n.group !== 'receipt');
+            }
+
+            if (typeFilter) {
+                filteredNodes = filteredNodes.filter(n => n.group === typeFilter || (n.entity_type && n.entity_type.toLowerCase() === typeFilter));
+            }
+
+            if (searchTerm) {
+                filteredNodes = filteredNodes.filter(n => {
+                    return (n.label && n.label.toLowerCase().includes(searchTerm)) ||
+                           (n.id && n.id.toLowerCase().includes(searchTerm)) ||
+                           (n.rechnungsnummer && n.rechnungsnummer.toLowerCase().includes(searchTerm));
+                });
+            }
+
+            const nodeIds = new Set(filteredNodes.map(n => n.id));
+            const filteredEdges = graphEdgesData.filter(e => nodeIds.has(e.from) && nodeIds.has(e.to));
+
+            const styledNodes = filteredNodes.map(node => {
+                const group = node.group ? node.group.toLowerCase() : "allgemein";
+                const colorSet = groupColors[group] || groupColors["allgemein"];
+
+                return {
+                    id: node.id,
+                    label: node.label,
+                    shape: "box",
+                    font: {
+                        color: "#f8fafc",
+                        face: "Inter",
+                        size: 14,
+                        bold: { color: "#f8fafc" }
+                    },
+                    margin: 10,
+                    borderWidth: 1.5,
+                    color: {
+                        background: colorSet.background,
+                        border: colorSet.border,
+                        highlight: colorSet.highlight
+                    },
+                    shadow: {
+                        enabled: true,
+                        color: "rgba(0,0,0,0.4)",
+                        size: 6,
+                        x: 2,
+                        y: 2
+                    }
+                };
+            });
+
+            const data = {
+                nodes: new vis.DataSet(styledNodes),
+                edges: new vis.DataSet(filteredEdges.map(edge => ({
+                    from: edge.from,
+                    to: edge.to,
+                    arrows: "to",
+                    label: edge.relation || "",
+                    font: { size: 10, color: "#94a3b8", align: "middle" },
+                    color: { color: "rgba(99, 102, 241, 0.4)", highlight: "#6366f1" },
+                    width: 1.5
+                })))
+            };
+
+            const options = {
+                interaction: {
+                    hover: true,
+                    tooltipDelay: 200
+                },
+                physics: {
+                    barnesHut: {
+                        gravitationalConstant: -1800,
+                        centralGravity: 0.15,
+                        springLength: 120,
+                        springConstant: 0.04,
+                        damping: 0.09
+                    },
+                    stabilization: {
+                        iterations: 150
+                    }
+                }
+            };
+
+            if (network) {
+                network.destroy();
+            }
+
+            network = new vis.Network(container, data, options);
+
+            network.on("selectNode", function(params) {
+                if (params.nodes.length > 0) {
+                    showNodeDetails(params.nodes[0]);
+                }
+            });
+
+            network.on("deselectNode", function() {
+                hideNodeDetails();
+            });
+        }
+
+        function setupFilters() {
+            const filterDiv = document.createElement("div");
+            filterDiv.style.position = "absolute";
+            filterDiv.style.top = "10px";
+            filterDiv.style.left = "10px";
+            filterDiv.style.background = "var(--card-bg)";
+            filterDiv.style.border = "1px solid var(--card-border)";
+            filterDiv.style.borderRadius = "8px";
+            filterDiv.style.padding = "8px";
+            filterDiv.style.display = "flex";
+            filterDiv.style.flexDirection = "column";
+            filterDiv.style.gap = "8px";
+            filterDiv.style.zIndex = "100";
+
+            // Header for controls
+            const header = document.createElement("div");
+            header.style.fontSize = "12px";
+            header.style.fontWeight = "bold";
+            header.textContent = "Suche & Filter";
+            filterDiv.appendChild(header);
+
+            // Search input
+            const searchInput = document.createElement("input");
+            searchInput.type = "text";
+            searchInput.id = "graph-search";
+            searchInput.placeholder = "Suche (Name, ID, Belegnr.)";
+            searchInput.style.padding = "4px";
+            searchInput.style.fontSize = "12px";
+            searchInput.style.background = "rgba(15, 23, 42, 0.4)";
+            searchInput.style.color = "white";
+            searchInput.style.border = "1px solid var(--card-border)";
+            searchInput.style.borderRadius = "4px";
+            searchInput.oninput = applyFilters;
+            filterDiv.appendChild(searchInput);
+
+            // Node Type filter
+            const typeSelect = document.createElement("select");
+            typeSelect.id = "filter-type";
+            typeSelect.style.padding = "4px";
+            typeSelect.style.fontSize = "12px";
+            typeSelect.style.background = "rgba(15, 23, 42, 0.4)";
+            typeSelect.style.color = "white";
+            typeSelect.style.border = "1px solid var(--card-border)";
+            typeSelect.style.borderRadius = "4px";
+            const types = ["Alle Typen", "Lieferant", "Kunde", "Artikelart", "Prüfung"];
+            types.forEach(t => {
+                const opt = document.createElement("option");
+                opt.value = t === "Alle Typen" ? "" : t.toLowerCase();
+                opt.textContent = t;
+                typeSelect.appendChild(opt);
+            });
+            typeSelect.onchange = applyFilters;
+            filterDiv.appendChild(typeSelect);
+
+            // Checkbox for receipts
+            const checkboxRow = document.createElement("div");
+            checkboxRow.style.display = "flex";
+            checkboxRow.style.alignItems = "center";
+            checkboxRow.style.gap = "4px";
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.id = "show-receipts";
+            checkbox.onchange = applyFilters;
+
+            const label = document.createElement("label");
+            label.htmlFor = "show-receipts";
+            label.style.fontSize = "12px";
+            label.textContent = "Belege einblenden";
+            checkboxRow.appendChild(checkbox);
+            checkboxRow.appendChild(label);
+            filterDiv.appendChild(checkboxRow);
+
+            document.querySelector('.graph-panel').appendChild(filterDiv);
+        }
+
+        function applyFilters() {
+            const showReceipts = document.getElementById("show-receipts").checked;
+            const searchTerm = document.getElementById("graph-search").value.toLowerCase();
+            const typeFilter = document.getElementById("filter-type").value;
+
+            renderGraph(showReceipts, searchTerm, typeFilter);
+        }
+
+        function showNodeDetails(nodeId) {
+            const nodeData = graphNodesData.find(n => n.id === nodeId);
+            if (!nodeData) return;
 
             document.getElementById("no-note-selected").style.display = "none";
             
-            document.getElementById("note-title").textContent = page.title;
-            document.getElementById("note-meta").textContent = `Slug: ${page.slug} | Format: Markdown`;
-            document.getElementById("note-content").textContent = page.content;
+            document.getElementById("note-title").textContent = nodeData.label;
+
+            let metaText = `ID: ${nodeData.id} | Typ: ${nodeData.entity_type}`;
+            if (nodeData.virtual) {
+                metaText += " (Virtual)";
+            }
+            document.getElementById("note-meta").textContent = metaText;
+
+            const contentDiv = document.getElementById("note-content");
+            contentDiv.innerHTML = ""; // Clear existing content securely
+
+            // Metadaten als Text
+            const mdObj = { ...nodeData };
+            delete mdObj.id;
+            delete mdObj.label;
+            delete mdObj.group;
+            delete mdObj.entity_type;
+            delete mdObj.virtual;
+            delete mdObj.relative_path;
+
+            let infoText = "";
+            for (const [key, value] of Object.entries(mdObj)) {
+                if (key !== "summary" && value !== "" && value !== null) {
+                    if (Array.isArray(value)) {
+                        infoText += `${key}: ${value.join(', ')}\n`;
+                    } else if (key === "beleg_link") {
+                        // Create link later
+                    } else {
+                        infoText += `${key}: ${value}\n`;
+                    }
+                }
+            }
+
+            if (nodeData.summary) {
+                infoText += `\nKurzfassung:\n${nodeData.summary}\n`;
+            }
+
+            const pre = document.createElement("pre");
+            pre.style.whiteSpace = "pre-wrap";
+            pre.style.fontFamily = "inherit";
+            pre.style.margin = "0";
+            pre.textContent = infoText;
+            contentDiv.appendChild(pre);
+
+            if (nodeData.beleg_link) {
+                const linkValue = nodeData.beleg_link.trim();
+                const safeSchemes = ["http://", "https://", "file://", "/", "./", "../"];
+                let isSafe = false;
+                for (const scheme of safeSchemes) {
+                    if (linkValue.startsWith(scheme)) {
+                        isSafe = true;
+                        break;
+                    }
+                }
+
+                if (isSafe) {
+                    const a = document.createElement("a");
+                    a.href = linkValue;
+                    a.textContent = "Beleg/PDF öffnen";
+                    a.style.color = "#60a5fa";
+                    a.style.display = "block";
+                    a.style.marginTop = "10px";
+                    a.target = "_blank";
+                    contentDiv.appendChild(a);
+                } else {
+                    const span = document.createElement("span");
+                    span.textContent = `Beleg Link (unbekanntes Format): ${linkValue}`;
+                    span.style.color = "#ef4444";
+                    span.style.display = "block";
+                    span.style.marginTop = "10px";
+                    span.style.fontSize = "12px";
+                    contentDiv.appendChild(span);
+                }
+            }
+
+            // Wenn Markdown-Content existiert, aus allPages laden
+            if (nodeData.id.startsWith("wiki:")) {
+                const page = allPages[nodeData.id];
+                if (page && page.content) {
+                    const sep = document.createElement("hr");
+                    sep.style.borderColor = "rgba(255,255,255,0.1)";
+                    sep.style.margin = "16px 0";
+                    contentDiv.appendChild(sep);
+
+                    const mdPre = document.createElement("pre");
+                    mdPre.style.whiteSpace = "pre-wrap";
+                    mdPre.style.fontFamily = "inherit";
+                    mdPre.style.margin = "0";
+                    mdPre.textContent = page.content;
+                    contentDiv.appendChild(mdPre);
+                }
+            }
             
             document.getElementById("note-details").style.display = "flex";
         }

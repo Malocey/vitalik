@@ -648,68 +648,368 @@ Dies ist eine deterministisch generierte Artikelart-Seite für '{cat}'.
 
         self.log_event("INITIALIZE", "Karpathy LLM-Wiki erfolgreich initialisiert.")
 
-    def get_graph_data(self) -> Dict[str, List[Dict[str, Any]]]:
+    def get_graph_data(self, db_path: Optional[str] = None) -> Dict[str, Any]:
         """
         Analysiert alle Wiki-Seiten und extrahiert Knoten (Nodes) und Verknüpfungen (Edges)
-        aus Wikilinks [[link]] und Standard-Markdown-Links.
+        aus Wikilinks [[link]] und Standard-Markdown-Links sowie SQLite Belegen.
         """
         import re
+        import sqlite3
+        import yaml
+
         nodes = []
         edges = []
+        warnings = []
         
+        # Rekursive Dateisuche
         pages = [
             page for page in self.wiki_dir.rglob("*.md")
             if page.name.casefold() not in {"index.md", "log.md"}
             and not any("archive" in part.casefold() for part in page.relative_to(self.wiki_dir).parts)
         ]
+
         page_metadata = {}
+        slug_to_ids: Dict[str, List[str]] = {}
+        account_nodes = {}
+
+        def safe_posix_path(p: Path) -> str:
+            return p.relative_to(self.wiki_dir).with_suffix('').as_posix()
         
         # 1. Knoten sammeln
         for p in pages:
+            rel_path = safe_posix_path(p)
+            node_id = f"wiki:{rel_path}"
             slug = p.stem
             
-            # Auslesen von Titel und Kategorie
+            if slug not in slug_to_ids:
+                slug_to_ids[slug] = []
+            slug_to_ids[slug].append(node_id)
+
             text = p.read_text(encoding="utf-8")
             title = slug.replace("_", " ").title()
             category = "allgemein"
             
-            for line in text.split("\n"):
+            # Frontmatter parsen
+            fm = {}
+            fm_match = re.match(r"^---\n(.*?)\n---\n(.*)", text, re.DOTALL)
+            body = text
+            if fm_match:
+                try:
+                    fm = yaml.safe_load(fm_match.group(1)) or {}
+                except Exception as e:
+                    warnings.append({
+                        "code": "INVALID_FRONTMATTER",
+                        "source_id": node_id,
+                        "message": str(e)
+                    })
+                body = fm_match.group(2)
+
+            # Entity Type aus Frontmatter
+            entity_type = fm.get("entity_type", "")
+
+            # Legacy-Felder parsen
+            legacy_fields = {}
+            legacy_patterns = {
+                "sevdesk_id": r"-\s*\*\*sevDesk-Kontakt(?:-ID)?:\*\*\s*(.+)",
+                "ort_land": r"-\s*\*\*Ort/Land:\*\*\s*(.+)",
+                "debitor": r"-\s*\*\*Debitor:\*\*\s*(.+)",
+                "kreditor": r"-\s*\*\*Kreditor:\*\*\s*(.+)",
+                "zahlungsziel": r"-\s*\*\*Zahlungsziel:\*\*\s*(.+)",
+            }
+            for field, pattern in legacy_patterns.items():
+                m = re.search(pattern, body, re.IGNORECASE)
+                if m:
+                    legacy_fields[field] = m.group(1).strip()
+
+            for line in body.split("\n"):
                 if line.startswith("# "):
                     title = line.replace("# ", "").strip()
                 elif "*Kategorie:" in line:
                     parts = line.split("|")
                     category = parts[0].replace("*Kategorie:", "").replace("*", "").strip().lower()
-                    
-            page_metadata[slug] = {
+
+            # Summary bestimmen
+            summary = ""
+            if fm.get("summary"):
+                summary = str(fm.get("summary")).strip()
+            else:
+                verdichtet_match = re.search(r"##\s*Verdichtetes Wissen\s*(.*?)(?:##|\Z)", body, re.DOTALL | re.IGNORECASE)
+                text_to_search = verdichtet_match.group(1) if verdichtet_match else body
+
+                # Finde den ersten sinnvollen Fließtextabsatz (kein #, kein -, kein *)
+                paragraphs = [p.strip() for p in text_to_search.split("\n\n") if p.strip()]
+                for para in paragraphs:
+                    if not para.startswith("#") and not para.startswith("-") and not para.startswith("*") and not para.startswith("`"):
+                        # Bereinigen von Leerzeichen/Zeilenumbrüchen
+                        clean_para = " ".join(para.split())
+                        if len(clean_para) > 0:
+                            if len(clean_para) > 240:
+                                # Kurzfassung am nächsten Leerzeichen abschneiden
+                                cut_para = clean_para[:240]
+                                last_space = cut_para.rfind(" ")
+                                if last_space > 0:
+                                    clean_para = cut_para[:last_space] + "..."
+                                else:
+                                    clean_para = cut_para + "..."
+                            summary = clean_para
+                            break
+
+            if not summary and fm.get("entity_id"):
+                summary = f"Entity ID: {fm.get('entity_id')}"
+
+            # Ort/Land und andere Eigenschaften mergen
+            ort_land = fm.get("ort_land") or legacy_fields.get("ort_land", "")
+            sevdesk_id = fm.get("sevdesk_id") or legacy_fields.get("sevdesk_id", "")
+            debitor = fm.get("debitor") or legacy_fields.get("debitor", "")
+            kreditor = fm.get("kreditor") or legacy_fields.get("kreditor", "")
+            zahlungsziel = fm.get("zahlungsziel") or legacy_fields.get("zahlungsziel", "")
+
+            # Rollen
+            rollen = fm.get("rollen", "")
+            if not rollen and entity_type:
+                rollen = entity_type.title()
+
+            # Belegquellenanzahl
+            belegquellenanzahl = fm.get("source_count", 0)
+
+            # Prüfstatus
+            pruefstatus = fm.get("status", "")
+
+            # Artikelarten
+            artikelarten = fm.get("article_categories", [])
+            if isinstance(artikelarten, str):
+                artikelarten = [artikelarten]
+
+            # SKR03 Konten
+            skr03_konten = fm.get("skr03_accounts", [])
+            if isinstance(skr03_konten, str):
+                skr03_konten = [skr03_konten]
+
+            # Node Metadata bauen
+            node_data = {
+                "id": node_id,
+                "label": title,
+                "group": category,
+                "entity_type": entity_type or category,
+                "summary": summary,
+                "relative_path": p.relative_to(self.wiki_dir).as_posix(),
+                "virtual": False
+            }
+            if rollen: node_data["rollen"] = rollen
+            if ort_land: node_data["ort_land"] = ort_land
+            if sevdesk_id: node_data["sevdesk_id"] = sevdesk_id
+            if debitor: node_data["debitor"] = debitor
+            if kreditor: node_data["kreditor"] = kreditor
+            if zahlungsziel: node_data["zahlungsziel"] = zahlungsziel
+            if artikelarten: node_data["artikelarten"] = artikelarten
+            if skr03_konten: node_data["skr03_konten"] = skr03_konten
+            if belegquellenanzahl: node_data["belegquellenanzahl"] = belegquellenanzahl
+            if pruefstatus: node_data["pruefstatus"] = pruefstatus
+
+            page_metadata[node_id] = {
                 "title": title,
-                "category": category
+                "category": category,
+                "body": body,
+                "node_data": node_data
             }
             
-            nodes.append({
-                "id": slug,
-                "label": title,
-                "group": category
-            })
+            nodes.append(node_data)
+
+            # Edges für SKR03-Konten
+            for konto in skr03_konten:
+                konto_str = str(konto).strip()
+                if konto_str:
+                    account_id = f"account:{konto_str}"
+                    if account_id not in account_nodes:
+                        account_nodes[account_id] = {
+                            "id": account_id,
+                            "entity_type": "skr03_account",
+                            "label": f"SKR03 {konto_str}",
+                            "account_number": konto_str,
+                            "virtual": True,
+                            "group": "skr03"
+                        }
+                    edges.append({
+                        "from": node_id,
+                        "to": account_id,
+                        "relation": "has_account"
+                    })
+
+        # SQLite Anbindung für Belege
+        db_conn = None
+        db_unavailable = False
+        receipt_nodes = {}
+        beleg_columns = []
+
+        if db_path is None:
+            db_path = DATA_DIR / "rag_index.db"
+
+        try:
+            db_conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            db_conn.row_factory = sqlite3.Row
+            cursor = db_conn.cursor()
+            cursor.execute("PRAGMA table_info(belege)")
+            beleg_columns = [row["name"] for row in cursor.fetchall()]
+            if not beleg_columns:
+                db_unavailable = True
+                warnings.append({"code": "SQLITE_UNAVAILABLE", "message": "Table 'belege' not found."})
+        except sqlite3.Error as e:
+            db_unavailable = True
+            warnings.append({"code": "SQLITE_UNAVAILABLE", "message": str(e)})
+            if db_conn:
+                db_conn.close()
+                db_conn = None
+
+        def get_receipt_data(beleg_id: str) -> Optional[Dict[str, Any]]:
+            if db_unavailable or not db_conn or "beleg_id" not in beleg_columns:
+                return None
+            try:
+                cursor = db_conn.cursor()
+                cursor.execute("SELECT * FROM belege WHERE beleg_id=?", (beleg_id,))
+                row = cursor.fetchone()
+                if row:
+                    data = dict(row)
+                    receipt_id = f"receipt:{beleg_id}"
+
+                    # Extract only permitted fields
+                    receipt_data = {
+                        "id": receipt_id,
+                        "entity_type": "receipt",
+                        "label": f"Beleg {beleg_id}",
+                        "virtual": True,
+                        "group": "receipt",
+                        "beleg_id": beleg_id
+                    }
+
+                    if "belegtyp" in beleg_columns and data.get("belegtyp"): receipt_data["belegtyp"] = data["belegtyp"]
+                    elif "dokumenttyp" in beleg_columns and data.get("dokumenttyp"): receipt_data["belegtyp"] = data["dokumenttyp"]
+
+                    if "datum" in beleg_columns and data.get("datum"): receipt_data["datum"] = data["datum"]
+                    if "lieferant" in beleg_columns and data.get("lieferant"): receipt_data["lieferant"] = data["lieferant"]
+                    if "rechnungsnummer" in beleg_columns and data.get("rechnungsnummer"): receipt_data["rechnungsnummer"] = data["rechnungsnummer"]
+                    if "brutto" in beleg_columns and data.get("brutto"): receipt_data["brutto"] = data["brutto"]
+
+                    if "status" in beleg_columns and data.get("status"): receipt_data["status"] = data["status"]
+                    elif "validation_status" in beleg_columns and data.get("validation_status"): receipt_data["status"] = data["validation_status"]
+
+                    if "beleg_link" in beleg_columns and data.get("beleg_link"): receipt_data["beleg_link"] = data["beleg_link"]
+                    elif "pdf_link" in beleg_columns and data.get("pdf_link"): receipt_data["beleg_link"] = data["pdf_link"]
+
+                    if "confidence_score" in beleg_columns and data.get("confidence_score") is not None: receipt_data["confidence"] = data["confidence_score"]
+                    elif "confidence" in beleg_columns and data.get("confidence") is not None: receipt_data["confidence"] = data["confidence"]
+
+                    if "contact_entity_id" in beleg_columns and data.get("contact_entity_id"): receipt_data["contact_entity_id"] = data["contact_entity_id"]
+                    if "skr_konto" in beleg_columns and data.get("skr_konto"): receipt_data["skr_konto"] = data["skr_konto"]
+                    if "warengruppe" in beleg_columns and data.get("warengruppe"): receipt_data["warengruppe"] = data["warengruppe"]
+
+                    return receipt_data
+            except sqlite3.Error:
+                pass
+            return None
+
+        def resolve_link(target_stem: str, source_id: str) -> Optional[str]:
+            candidates = slug_to_ids.get(target_stem, [])
+            if len(candidates) == 1:
+                return candidates[0]
+            elif len(candidates) > 1:
+                warnings.append({
+                    "code": "AMBIGUOUS_LINK",
+                    "source_id": source_id,
+                    "target": target_stem,
+                    "candidates": candidates
+                })
+            else:
+                warnings.append({
+                    "code": "UNRESOLVED_LINK",
+                    "source_id": source_id,
+                    "target": target_stem
+                })
+            return None
             
         # 2. Verknüpfungen sammeln
-        for p in pages:
-            slug = p.stem
-            text = p.read_text(encoding="utf-8")
+        for node_id, p_meta in page_metadata.items():
+            body = p_meta["body"]
             
             # Wikilinks: [[slug]] oder [[slug|label]]
-            wikilinks = re.findall(r"\[\[([\w\-]+)(?:\|.*?)?\]\]", text)
+            wikilinks = re.findall(r"\[\[([\w\-]+)(?:\|.*?)?\]\]", body)
             # Markdown-Links: [label](./slug.md)
-            md_links = re.findall(r"\[.*?\]\(\.\/([a-zA-Z0-9_\-]+)\.md\)", text)
+            md_links = re.findall(r"\[.*?\]\(\.\/([a-zA-Z0-9_\-]+)\.md\)", body)
             
             all_targets = set(wikilinks + md_links)
-            for target in all_targets:
-                if target in page_metadata:
+            for target_stem in all_targets:
+                resolved_id = resolve_link(target_stem, node_id)
+                if resolved_id:
+                    relation = "related"
+                    if "article_category" in target_stem:
+                        relation = "has_category"
+                    elif "supplier" in target_stem or "contact" in target_stem:
+                        relation = "has_contact"
+
                     edges.append({
-                        "from": slug,
-                        "to": target
+                        "from": node_id,
+                        "to": resolved_id,
+                        "relation": relation
                     })
                     
-        return {"nodes": nodes, "edges": edges}
+            # Extrahieren von Beleg-IDs (Format: - `beleg_id` | ...)
+            beleg_matches = re.findall(r"^- `([^`]+)` \|", body, re.MULTILINE)
+            for beleg_id in beleg_matches:
+                beleg_id = beleg_id.strip()
+                if "DUBLITTE_MD5_NO_SAVE" in beleg_id:
+                    continue
+
+                receipt_data = get_receipt_data(beleg_id)
+                if receipt_data:
+                    receipt_id = receipt_data["id"]
+                    if receipt_id not in receipt_nodes:
+                        receipt_nodes[receipt_id] = receipt_data
+
+                    edges.append({
+                        "from": node_id,
+                        "to": receipt_id,
+                        "relation": "source_receipt"
+                    })
+
+                    # Create SKR03 account node if skr_konto is in receipt
+                    skr_konto = receipt_data.get("skr_konto")
+                    if skr_konto:
+                        skr_konto_str = str(skr_konto).strip()
+                        if skr_konto_str:
+                            account_id = f"account:{skr_konto_str}"
+                            if account_id not in account_nodes:
+                                account_nodes[account_id] = {
+                                    "id": account_id,
+                                    "entity_type": "skr03_account",
+                                    "label": f"SKR03 {skr_konto_str}",
+                                    "account_number": skr_konto_str,
+                                    "virtual": True,
+                                    "group": "skr03"
+                                }
+                            # Optional: edge from receipt to account
+                elif not db_unavailable:
+                    warnings.append({
+                        "code": "MISSING_RECEIPT",
+                        "source_id": node_id,
+                        "beleg_id": beleg_id
+                    })
+
+        if db_conn:
+            db_conn.close()
+
+        # Add virtual nodes to node list
+        for account_data in account_nodes.values():
+            nodes.append(account_data)
+
+        for receipt_data in receipt_nodes.values():
+            nodes.append(receipt_data)
+
+        # Deterministische Sortierung der Warnungen
+        def sort_warnings(w):
+            return f"{w.get('code')}_{w.get('source_id', '')}_{w.get('target', '')}_{w.get('beleg_id', '')}_{w.get('message', '')}"
+
+        warnings.sort(key=sort_warnings)
+
+        return {"nodes": nodes, "edges": edges, "warnings": warnings}
 
 
 # Globale Karpathy Wiki-Instanz
