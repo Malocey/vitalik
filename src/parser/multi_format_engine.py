@@ -180,18 +180,39 @@ class MultiFormatEngine:
                 f"Date: {msg.get('date', '')}"
             ]
             body_parts = []
+            attachment_texts = []
             if msg.is_multipart():
                 for part in msg.walk():
                     content_type = part.get_content_type()
                     if content_type == "text/plain":
                         payload = part.get_content()
-                        if isinstance(payload, str):
+                        if isinstance(payload, str) and payload.strip():
                             body_parts.append(payload)
+                    elif content_type.startswith("image/"):
+                        try:
+                            import tempfile
+                            from src.parser.ocr_engine import ocr_engine
+                            img_filename = part.get_filename() or "attachment.png"
+                            img_bytes = part.get_payload(decode=True)
+                            if img_bytes:
+                                tmp_img = Path(tempfile.gettempdir()) / f"mail_img_{abs(hash(img_filename))}_{img_filename}"
+                                tmp_img.write_bytes(img_bytes)
+                                ocr_res = ocr_engine.extract_with_quality(tmp_img)
+                                ocr_text = ocr_res.get("text", "").strip()
+                                if ocr_text:
+                                    attachment_texts.append(f"=== BILD-ANHANG: {img_filename} (OCR) ===\n{ocr_text}")
+                                if tmp_img.exists():
+                                    tmp_img.unlink()
+                        except Exception as img_err:
+                            logger.warning(f"[MultiFormatEngine] OCR-Fehler bei Bild-Anhang in E-Mail: {img_err}")
             else:
                 content = msg.get_content() or ""
                 body_parts.append(content if msg.get_content_type() == "text/plain" else "")
 
             combined_body = "\n".join(body_parts)
+            if attachment_texts:
+                combined_body += "\n\n" + "\n\n".join(attachment_texts)
+
             text = "\n".join(headers) + "\n\n" + combined_body
             return [{
                 "page_num": 1,

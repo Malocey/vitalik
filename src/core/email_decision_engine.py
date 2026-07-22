@@ -19,6 +19,16 @@ class EmailDecisionEngine:
         subject = email_data.get("subject", "") or ""
         sender = email_data.get("from", "") or email_data.get("sender", "") or ""
         body = email_data.get("body", "") or email_data.get("full_text", "") or ""
+
+        if "from:" in body.lower() and (not sender or sender.endswith(".eml")):
+            for line in body.splitlines()[:15]:
+                if line.lower().startswith("from:"):
+                    sender = line.split(":", 1)[1].strip()
+                elif line.lower().startswith("subject:") and (not subject or subject.endswith(".eml") or not subject.strip()):
+                    extracted_sub = line.split(":", 1)[1].strip()
+                    if extracted_sub:
+                        subject = extracted_sub
+
         combined_text = f"{subject}\n{body}".lower()
 
         # Supplier Matching via Contact Memory
