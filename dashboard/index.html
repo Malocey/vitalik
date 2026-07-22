@@ -634,6 +634,10 @@
     <script>
         let lastQuery = '';
         let lastAnswer = '';
+        const esc = (value) => String(value ?? '')
+            .replaceAll('&', '&amp;').replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;').replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
 
         async function loadMatching() {
             try {
@@ -649,10 +653,10 @@
                             const tr = document.createElement('tr');
                             const statusColor = m.match_status === 'MATCHED' ? 'status-passed' : 'status-review';
                             tr.innerHTML = `
-                                <td>${m.invoice_id}</td>
-                                <td>${m.delivery_note_id || '-'}</td>
-                                <td>${m.supplier_name}</td>
-                                <td><span class="status-pill ${statusColor}">${m.match_status}</span></td>
+                                <td>${esc(m.invoice_id)}</td>
+                                <td>${esc(m.delivery_note_id || '-')}</td>
+                                <td>${esc(m.supplier_name)}</td>
+                                <td><span class="status-pill ${statusColor}">${esc(m.match_status)}</span></td>
                             `;
                             tbody.appendChild(tr);
                         });
@@ -678,9 +682,9 @@
                             const isIncrease = t.change_pct > 2.0;
                             const pillClass = isIncrease ? 'status-review' : 'status-passed';
                             tr.innerHTML = `
-                                <td><strong>${t.item_name}</strong></td>
-                                <td>${t.supplier_name}</td>
-                                <td>${t.oldest_price.toFixed(2)}€ ➔ ${t.latest_price.toFixed(2)}€ / ${t.unit_name}</td>
+                                <td><strong>${esc(t.item_name)}</strong></td>
+                                <td>${esc(t.supplier_name)}</td>
+                                <td>${Number(t.oldest_price).toFixed(2)}€ ➔ ${Number(t.latest_price).toFixed(2)}€ / ${esc(t.unit_name)}</td>
                                 <td><span class="status-pill ${pillClass}">${t.change_pct > 0 ? '+' : ''}${t.change_pct}%</span></td>
                             `;
                             tbody.appendChild(tr);
@@ -712,20 +716,20 @@
                     const s = data.summary;
                     summaryDiv.innerHTML = `
                         <span style="color: #34d399;">Gesamt: ${s.total || 0}</span> |
-                        <span style="color: #a5b4fc;">Committed: ${s.COMMITTED || 0}</span> |
-                        <span style="color: #f59e0b;">Leased: ${s.LEASED || 0}</span> |
-                        <span style="color: #ef4444;">Failed: ${s.FAILED || 0}</span>
+                        <span style="color: #a5b4fc;">Committed: ${s.completed || 0}</span> |
+                        <span style="color: #f59e0b;">Laufend: ${s.running || 0}</span> |
+                        <span style="color: #ef4444;">Fehler: ${s.failed || 0}</span>
                     `;
                     tbody.innerHTML = '';
                     if (data.jobs && data.jobs.length > 0) {
                         data.jobs.slice(0, 15).forEach(job => {
                             const tr = document.createElement('tr');
                             tr.innerHTML = `
-                                <td>${job.job_id}</td>
-                                <td><span class="status-pill ${job.status === 'COMMITTED' ? 'status-passed' : 'status-review'}">${job.status}</span></td>
-                                <td>${job.start_page}-${job.end_page}</td>
-                                <td>${job.locked_by || '-'}</td>
-                                <td style="font-family: monospace; font-size: 11px;">${(job.md5_hash || '').substring(0, 8)}...</td>
+                                <td>${esc(job.job_id)}</td>
+                                <td><span class="status-pill ${job.status === 'COMMITTED' ? 'status-passed' : 'status-review'}">${esc(job.status)}</span></td>
+                                <td>${esc(job.page_start)}-${esc(job.page_end)}</td>
+                                <td>${job.leased ? 'aktiv' : '-'}</td>
+                                <td style="font-family: monospace; font-size: 11px;">${esc(job.source_hash || '')}</td>
                             `;
                             tbody.appendChild(tr);
                         });
@@ -749,10 +753,10 @@
                         data.entities.forEach(ent => {
                             const tr = document.createElement('tr');
                             tr.innerHTML = `
-                                <td><strong>${ent.canonical_name}</strong></td>
-                                <td><span class="status-pill status-passed">${ent.role}</span></td>
+                                <td><strong>${esc(ent.canonical_name)}</strong></td>
+                                <td><span class="status-pill status-passed">${esc(ent.role)}</span></td>
                                 <td>${ent.alias_count || 1} Alias(e)</td>
-                                <td>${ent.tax_id || ent.iban || '-'}</td>
+                                <td>${esc(ent.tax_id || ent.iban || '-')}</td>
                             `;
                             tbody.appendChild(tr);
                         });
@@ -774,8 +778,8 @@
                     const div = document.createElement('div');
                     div.className = 'wiki-item';
                     div.innerHTML = `
-                        <div class="wiki-title">${page.title}</div>
-                        <div class="wiki-snippet">${page.content.substring(0, 120)}...</div>
+                        <div class="wiki-title">${esc(page.title)}</div>
+                        <div class="wiki-snippet">${esc(page.content.substring(0, 120))}...</div>
                     `;
                     div.onclick = () => alert(`--- ${page.title} ---\n\n${page.content}`);
                     container.appendChild(div);
@@ -821,11 +825,11 @@
                     data.results.forEach(item => {
                         const tr = document.createElement('tr');
                         tr.innerHTML = `
-                            <td>${item.filename}</td>
-                            <td>${item.lieferant}</td>
-                            <td>${item.brutto.toFixed(2)} €</td>
-                            <td>${item.skr03}</td>
-                            <td style="color: ${item.validation_status === 'PASSED' ? '#10b981' : '#ef4444'}">${item.validation_status}</td>
+                            <td>${esc(item.filename)}</td>
+                            <td>${esc(item.lieferant)}</td>
+                            <td>${Number(item.brutto || 0).toFixed(2)} €</td>
+                            <td>${esc(item.skr03)}</td>
+                            <td style="color: ${item.validation_status === 'PASSED' ? '#10b981' : '#ef4444'}">${esc(item.validation_status)}</td>
                         `;
                         tableBody.appendChild(tr);
                     });
@@ -872,10 +876,10 @@
                         card.className = 'chunk-card';
                         card.innerHTML = `
                             <div class="chunk-header">
-                                <span>[${i+1}] ${chunk.title}</span>
+                                <span>[${i+1}] ${esc(chunk.title)}</span>
                                 <span class="score-pill">Match: ${scorePct}%</span>
                             </div>
-                            <div style="color: #cbd5e1; font-size: 13px;">${chunk.content}</div>
+                            <div style="color: #cbd5e1; font-size: 13px;">${esc(chunk.content)}</div>
                         `;
                         chunksContainer.appendChild(card);
                     });
@@ -883,7 +887,7 @@
 
                 lastAnswer = data.answer;
                 responseContainer.innerHTML = `
-                    <div>${data.answer}</div>
+                    <div>${esc(data.answer)}</div>
                     <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(99, 102, 241, 0.2); font-size: 12px; color: #10b981; font-weight: 600;">
                         ✅ Automatisch ins Wiki-Gedächtnis gespeichert
                     </div>

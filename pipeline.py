@@ -22,6 +22,7 @@ from src.core.validation_shield import validation_shield
 from src.core.rag_engine import rag_engine
 from src.core.contact_memory import contact_memory
 from src.core.pipeline_job_adapter import pipeline_job_adapter
+from src.core.admin_service import processing_control
 from src.core.mocks import mock_drive, mock_telegram, mock_sevdesk
 from src.drive.sorter import DriveSorter
 
@@ -74,6 +75,7 @@ class ArchivePipeline:
         Verarbeitet eine mehrseitige PDF-Archivdatei stapelweise und parallel.
         Speichert Ergebnisse inkrementell und verschiebt die Quelldatei nach Abschluss.
         """
+        processing_control.ensure_running()
         import datetime
         import threading
         import shutil

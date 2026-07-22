@@ -351,6 +351,16 @@ class DocumentAnalyzer:
             belegtyp = "Auftragsbestaetigung"
         elif re.search(r"(?i)\bmahnung\b", text):
             belegtyp = "Mahnung"
+
+        invoice_number = None
+        for pattern in (
+            r"(?i)\b(?:rechnungsnummer|rechnungs-?nr\.?|invoice\s*(?:no\.?|number))\s*[:#]?\s*([A-Z0-9][A-Z0-9./_-]{2,})",
+            r"(?i)\b(?:belegnummer|beleg-?nr\.?)\s*[:#]?\s*([A-Z0-9][A-Z0-9./_-]{2,})",
+        ):
+            match = re.search(pattern, text)
+            if match:
+                invoice_number = match.group(1).strip()
+                break
             
         return {
             "lieferant": supplier,
@@ -358,7 +368,7 @@ class DocumentAnalyzer:
             "netto": netto,
             "steuer": steuer,
             "brutto": amount,
-            "rechnungsnummer": "REG-EXPR",
+            "rechnungsnummer": invoice_number or "UNBEKANNT",
             "confidence_score": 0.70 if amounts_estimated else 1.0,
             "warengruppe": "Fleischwaren" if steuer_satz == 7.0 else "Betriebsbedarf",
             "belegtyp": belegtyp,
@@ -438,14 +448,17 @@ class DocumentAnalyzer:
                 "amount_result": amount_result,
                 "supplier_result": {
                     "value": supplier_val,
+                    "found": bool(supplier_val),
                     "confidence": 1.0 if supplier_val else 0.0,
-                    "conflicts": False
+                    "conflicts": []
                 },
                 "invoice_number_result": {
                     "value": inv_num_val,
+                    "found": bool(inv_num_val),
                     "confidence": 1.0 if inv_num_val else 0.0,
-                    "conflicts": False
-                }
+                    "conflicts": []
+                },
+                "boundary_conflicts": bound.get("boundary_warnings", []),
             }
             fast_lane_eval = self.fast_lane_router.route(router_data)
             route = fast_lane_eval.get("route", "FULL_LLM")
@@ -460,11 +473,6 @@ class DocumentAnalyzer:
                 doc_data = regex_data
                 doc_data["fast_lane_route"] = "FAST_LANE"
                 doc_data["fast_lane_saved_llm"] = True
-            elif regex_data and route in ["FAST_LANE", "TARGETED_LLM"]:
-                logger.info(f"[Analyzer] Regex-Extraktion erfolgreich für Seiten {start}-{end} (Route: {route})")
-                doc_data = regex_data
-                doc_data["fast_lane_route"] = route
-                doc_data["fast_lane_saved_llm"] = (route == "FAST_LANE")
             else:
                 # 2. KI-Fallback (LM-Manager Routing)
                 logger.info(f"[Analyzer] [FastLane] Route {route} gewählt für Seiten {start}-{end}. Starte KI-Fallback...")
@@ -522,9 +530,13 @@ Du musst versuchen, die Felder so genau wie möglich auszulesen. Falls ein Wert 
                         json_mode=True
                     )
                     doc_data = self._parse_json_safe(raw_response)
+                    doc_data["fast_lane_route"] = route
+                    doc_data["fast_lane_saved_llm"] = False
                 except Exception as e:
                     logger.error(f"[Analyzer] LLM-Analyse fehlgeschlagen für Seiten {start}-{end}: {e}")
                     doc_data = self._get_fallback_doc()
+                    doc_data["fast_lane_route"] = route
+                    doc_data["fast_lane_saved_llm"] = False
 
             if not protected_type:
                 doc_data = self._apply_sevdesk_assignment(doc_data, sevdesk_assignment)

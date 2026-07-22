@@ -21,6 +21,9 @@ htmlcov/
 
 # Laufzeit- und Belegdaten niemals ins Repository einchecken
 data/*.db
+data/*.db-*
+data/logs/
+data/admin_state.json
 data/ocr_cache/
 data/raw_sources/
 data/reports/

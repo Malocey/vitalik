@@ -11,7 +11,7 @@ def test_parallel_batch_extraction():
         with tempfile.NamedTemporaryFile(suffix=".txt", mode="w", delete=False, encoding="utf-8") as f:
             f.write(f"Test File {i}\nLieferant: Test {i}\nBrutto: {100 + i}.00 EUR")
             paths.append(Path(f.name))
-            
+
     try:
         results = multi_format_engine.extract_batch_parallel(paths, max_workers=4)
         assert len(results) == 3
@@ -30,10 +30,10 @@ def test_ocr_md5_cache():
     from PIL import Image
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
         tmp_path = Path(f.name)
-    
+
     img = Image.new("RGB", (100, 50), color="white")
     img.save(tmp_path)
-        
+
     try:
         # First call populates cache
         res1 = ocr_engine.extract_with_quality(tmp_path)

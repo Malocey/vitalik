@@ -10,7 +10,9 @@ def test_supported_extensions():
     assert engine.is_supported(Path("price_list.xlsx")) is True
     assert engine.is_supported(Path("data.csv")) is True
     assert engine.is_supported(Path("mail.eml")) is True
-    assert engine.is_supported(Path("mail.msg")) is True
+    assert engine.is_supported(Path("mail.msg")) is False
+    assert engine.is_supported(Path("legacy.doc")) is False
+    assert engine.is_supported(Path("legacy.xls")) is False
     assert engine.is_supported(Path("note.txt")) is True
     assert engine.is_supported(Path("archive.zip")) is False
 
@@ -64,3 +66,24 @@ def test_extract_eml():
     finally:
         if tmp_path.exists():
             tmp_path.unlink()
+
+
+def test_image_uses_quality_ocr(monkeypatch, tmp_path):
+    from src.parser.ocr_engine import ocr_engine
+    image = tmp_path / "receipt.png"
+    image.write_bytes(b"not-a-real-image")
+    monkeypatch.setattr(ocr_engine, "extract_with_quality", lambda path: {
+        "text": "Rechnung 100 EUR", "confidence": 0.91, "status": "OCR_OK"
+    })
+    result = MultiFormatEngine().extract_document(image)
+    assert result[0]["full_text"] == "Rechnung 100 EUR"
+    assert result[0]["ocr_confidence"] == 0.91
+
+
+def test_rejects_oversized_input(tmp_path):
+    path = tmp_path / "large.txt"
+    path.write_text("12345", encoding="utf-8")
+    engine = MultiFormatEngine()
+    engine.MAX_FILE_BYTES = 4
+    with pytest.raises(ValueError, match="überschreitet"):
+        engine.extract_document(path)

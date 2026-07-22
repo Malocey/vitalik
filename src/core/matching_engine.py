@@ -56,6 +56,7 @@ class MatchingEngine:
         inv_id = invoice.get("beleg_id") or invoice.get("rechnungsnummer") or "UNBEKANNT"
         inv_supplier = (invoice.get("lieferant") or "").strip().lower()
         inv_brutto = float(invoice.get("brutto") or 0.0)
+        inv_contact = invoice.get("contact_entity_id")
 
         if not delivery_note:
             match_res = {
@@ -73,10 +74,18 @@ class MatchingEngine:
         dn_id = delivery_note.get("beleg_id") or delivery_note.get("rechnungsnummer") or "LS_UNBEKANNT"
         dn_supplier = (delivery_note.get("lieferant") or "").strip().lower()
         dn_brutto = float(delivery_note.get("brutto") or 0.0)
+        dn_contact = delivery_note.get("contact_entity_id")
 
         discrepancies = []
-        if inv_supplier and dn_supplier and inv_supplier != dn_supplier:
+        if inv_contact and dn_contact and inv_contact != dn_contact:
+            discrepancies.append("Kontaktentitäten von Rechnung und Lieferschein weichen ab.")
+        elif inv_supplier and dn_supplier and inv_supplier != dn_supplier:
             discrepancies.append(f"Lieferant weicht ab: '{invoice.get('lieferant')}' vs '{delivery_note.get('lieferant')}'")
+
+        inv_date = self._parse_date(invoice.get("datum"))
+        dn_date = self._parse_date(delivery_note.get("datum"))
+        if inv_date and dn_date and abs((inv_date - dn_date).days) > 30:
+            discrepancies.append("Belegdatum liegt außerhalb des zulässigen 30-Tage-Fensters.")
 
         if dn_brutto > 0.0 and inv_brutto > 0.0 and abs(dn_brutto - inv_brutto) > 0.05:
             discrepancies.append(f"Betrag weicht ab: Rechnung {inv_brutto:.2f}€ vs Lieferschein {dn_brutto:.2f}€")
@@ -95,6 +104,13 @@ class MatchingEngine:
         }
         self._save_match(match_res)
         return match_res
+
+    @staticmethod
+    def _parse_date(value: Any) -> Optional[datetime]:
+        try:
+            return datetime.strptime(str(value), "%Y-%m-%d")
+        except (TypeError, ValueError):
+            return None
 
     def _save_match(self, match_res: Dict[str, Any]) -> None:
         with self._connect() as conn:

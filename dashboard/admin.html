@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Vitali Control Center</title>
+  <style>
+    body{font-family:system-ui;background:#08111f;color:#e5eefc;margin:0;padding:24px}h1{margin-top:0}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+    .card{background:#111d31;border:1px solid #263955;border-radius:14px;padding:16px}
+    button{background:#315efb;color:white;border:0;border-radius:8px;padding:10px 14px;margin:4px;cursor:pointer}
+    button.danger{background:#b43b4d}pre{white-space:pre-wrap;max-height:420px;overflow:auto;background:#060b14;padding:12px}
+    table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:6px;border-bottom:1px solid #263955}
+    .ok{color:#52d68a}.warn{color:#ffc65b}
+  </style>
+</head>
+<body>
+  <h1>Vitali Control Center</h1><p id="connection">Verbinde …</p>
+  <div class="grid">
+    <section class="card"><h2>System</h2><div id="health"></div></section>
+    <section class="card"><h2>Steuerung</h2>
+      <button data-action="resume">Verarbeitung fortsetzen</button>
+      <button class="danger" data-action="pause">Verarbeitung pausieren</button>
+      <button data-action="release_expired_leases">Abgelaufene Leases freigeben</button>
+      <p id="action-status"></p>
+    </section>
+    <section class="card"><h2>LM-Studio-Worker</h2><table><tbody id="workers"></tbody></table></section>
+    <section class="card"><h2>Jobs</h2><table><tbody id="jobs"></tbody></table></section>
+  </div>
+  <section class="card" style="margin-top:16px"><h2>Redigierte Logs</h2><pre id="logs"></pre></section>
+  <script>
+    const text=(id,value)=>document.getElementById(id).textContent=value;
+    async function json(url, options){const response=await fetch(url,options);if(!response.ok)throw new Error(await response.text());return response.json()}
+    function row(values){const tr=document.createElement('tr');values.forEach(value=>{const td=document.createElement('td');td.textContent=String(value??'');tr.appendChild(td)});return tr}
+    async function refresh(){
+      try{
+        const [health,jobs,logs]=await Promise.all([json('/api/admin/health'),json('/api/jobs'),json('/api/admin/logs?limit=200')]);
+        text('connection','Privat verbunden · Aktualisiert '+new Date().toLocaleTimeString());
+        text('health',`Status: ${health.status}\nLaufzeit: ${health.uptime_seconds}s\nPause: ${health.processing_paused?'ja':'nein'}\nRAG DB: ${health.storage.rag_db_mb} MB\nFrei: ${health.storage.free_gb} GB`);
+        const workerBody=document.getElementById('workers');workerBody.replaceChildren();(health.workers||[]).forEach(w=>workerBody.appendChild(row([w.base_url||w.endpoint||'Worker',w.status||'bekannt',w.in_flight??''])));
+        const jobBody=document.getElementById('jobs');jobBody.replaceChildren();(jobs.jobs||[]).slice(0,20).forEach(j=>jobBody.appendChild(row([j.job_id,j.status,`${j.page_start}-${j.page_end}`,j.attempt_count])));
+        text('logs',(logs.lines||[]).join('\n'));
+      }catch(error){text('connection','Verbindung fehlgeschlagen: '+error.message)}
+    }
+    document.querySelectorAll('button[data-action]').forEach(button=>button.addEventListener('click',async()=>{
+      try{const action=button.dataset.action;await json('/api/admin/action',{method:'POST',headers:{'Content-Type':'application/json','X-Vitalik-Action':'confirmed'},body:JSON.stringify({action})});text('action-status','Ausgeführt: '+action);await refresh()}catch(error){text('action-status','Fehler: '+error.message)}
+    }));
+    refresh();setInterval(refresh,10000);
+  </script>
+</body></html>

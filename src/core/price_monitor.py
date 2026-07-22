@@ -5,6 +5,7 @@ Erfasst Artikel-Einzelpreise aus Rechnungen, Excel-Preislisten und Angeboten und
 
 import logging
 import sqlite3
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from config import DATA_DIR
@@ -42,8 +43,13 @@ class PriceMonitor:
                 );
             """)
             conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_supplier_item 
+                CREATE INDEX IF NOT EXISTS idx_supplier_item
                 ON item_price_history(supplier_name, item_name);
+            """)
+            conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_price_document_item
+                ON item_price_history(document_id, supplier_name, item_name, unit_name)
+                WHERE document_id IS NOT NULL AND document_id != '';
             """)
             conn.commit()
 
@@ -58,14 +64,35 @@ class PriceMonitor:
     ) -> bool:
         if not supplier_name or not item_name or unit_price <= 0.0:
             return False
+        supplier_name = self._normalize_label(supplier_name)
+        item_name = self._normalize_label(item_name)
+        unit_name = self._normalize_unit(unit_name)
         with self._connect() as conn:
             conn.execute("""
                 INSERT INTO item_price_history (
                     supplier_name, item_name, unit_price, unit_name, document_id, source_file, recorded_at
                 ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(document_id, supplier_name, item_name, unit_name)
+                WHERE document_id IS NOT NULL AND document_id != ''
+                DO UPDATE SET unit_price=excluded.unit_price, source_file=excluded.source_file
             """, (supplier_name.strip(), item_name.strip(), float(unit_price), unit_name, document_id, source_file))
             conn.commit()
             return True
+
+    @staticmethod
+    def _normalize_label(value: str) -> str:
+        return " ".join(str(value).strip().split())
+
+    @staticmethod
+    def _normalize_unit(value: str) -> str:
+        normalized = re.sub(r"[^a-z0-9]", "", str(value or "").casefold())
+        aliases = {
+            "kilogramm": "kg", "kilo": "kg", "kg": "kg",
+            "gramm": "g", "gr": "g", "g": "g",
+            "stuck": "Stück", "stueck": "Stück", "stk": "Stück",
+            "karton": "Karton", "kt": "Karton", "liter": "l", "l": "l",
+        }
+        return aliases.get(normalized, str(value or "Stück").strip())
 
     def get_price_trends(self) -> List[Dict[str, Any]]:
         with self._connect() as conn:

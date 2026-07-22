@@ -9,11 +9,14 @@ Das Modul `src/core/matching_engine.py` gleicht Lieferscheine (`Lieferschein`) u
 ### Funktionsweise
 - **Identitäts- & Lieferantenabgleich**: Nutzt das deduplizierte `ContactMemory`, um Dokumente demselben Lieferanten zuzuordnen.
 - **Datumsfenster**: Berücksichtigt ein flexibles Zeitfenster (±30 Tage).
-- **Diskrepanzerkennung**: 
+- **Diskrepanzerkennung**:
   - `MATCHED` (Score: 0,95): Lieferant, Daten und Beträge stimmen überein.
   - `DISCREPANCY` (Score: 0,70): Betrags- oder Lieferantenabweichungen werden protokolliert.
   - `OFFEN_KEIN_LIEFERSCHEIN`: Rechnung liegt vor, aber noch kein Lieferschein im System.
 - **SQLite-Tabelle**: `beleg_matches` in `data/rag_index.db`.
+
+Kontaktentitäten haben Vorrang vor bloßen Namensvergleichen. Belegpaare außerhalb
+des dokumentierten ±30-Tage-Fensters werden als Diskrepanz markiert.
 
 ---
 
@@ -26,3 +29,7 @@ Das Modul `src/core/price_monitor.py` verfolgt Einzelpreise pro Artikel über ve
 - **Preistrend-Berechnung**:
   $$\text{Preisveränderung \%} = \frac{\text{Aktueller Preis} - \text{Erster Preis}}{\text{Erster Preis}} \times 100$$
 - **Preiserhöhungs-Warnung**: Erreicht die Preissteigerung **> 2,0 %**, wird automatisch der Status `PREISERHOEHUNG_WARNUNG` gesetzt und im Dashboard hervorgehoben.
+
+Preise werden pro Dokument, Lieferant, Artikel und normalisierter Einheit
+idempotent geschrieben. Ein erneuter Scan desselben Belegs erzeugt keinen zweiten
+Datenpunkt.

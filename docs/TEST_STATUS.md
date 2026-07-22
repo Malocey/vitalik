@@ -8,10 +8,10 @@ Stand: 22. Juli 2026, Integrationsbranch `main`
 python -m pytest
 ```
 
-Ergebnis auf Windows mit Python 3.13.5:
+Ergebnis der finalen Integrationsprüfung auf macOS mit Python 3.9.6:
 
 ```text
-121 passed in 5.26s
+130 passed in 3.81s
 ```
 
 Die vier Warnungen stammen von `urllib3`/LibreSSL und Hinweisen externer
@@ -76,6 +76,18 @@ bestanden mit 112 Tests. Neue Tests prüfen:
   Dateisysteme brauchen einen gesonderten Belastungstest.
 - Die echte Belegerkennungsqualität muss mit repräsentativen, anonymisierten PDFs
   und Erwartungsdaten über den Benchmark gemessen werden.
+
+## Fernverwaltung und neue Integrationskorrekturen
+
+Die zusätzlichen Tests prüfen die Zugriffskontrolle und Datenmaskierung des
+Control Centers, persistentes Pausieren, sichere Scanpfade, Größen- und
+Formatgrenzen der Mehrformatverarbeitung, Bild-OCR sowie zeitliche und fachliche
+Grenzen der Belegzuordnung. Außerdem wurde nachgewiesen, dass ein erneuter Import
+desselben Dokuments keine doppelten Preisbeobachtungen erzeugt.
+
+Zusätzlich liefen `py_compile`, die Shell-Syntaxprüfung des Installationsskripts
+und `git diff --check` ohne Fehler. Vier Warnungen betreffen ausschließlich die
+veraltete lokale Python-/LibreSSL-Laufzeit; die Anwendungstests selbst sind grün.
 
 ## Nächste Abnahmekriterien
 

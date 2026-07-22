@@ -5,6 +5,9 @@ Unterstützt pytesseract / Tesseract OCR mit Fallback-Mechanismus.
 """
 
 import logging
+import hashlib
+import threading
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, Optional, List
 
@@ -20,7 +23,9 @@ except ImportError:
 
 class OCREngine:
     def __init__(self, tesseract_cmd: Optional[str] = None):
-        self._page_cache: Dict[str, Dict[str, Any]] = {}
+        self._page_cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+        self._cache_lock = threading.Lock()
+        self._cache_limit = 512
         if HAS_PYTESSERACT:
             if tesseract_cmd:
                 pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
@@ -36,9 +41,12 @@ class OCREngine:
                         break
 
     def _compute_md5(self, path: Path) -> str:
-        import hashlib
         try:
-            return hashlib.md5(path.read_bytes()).hexdigest()
+            digest = hashlib.md5()
+            with path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            return digest.hexdigest()
         except Exception:
             return str(path.name)
 
@@ -50,9 +58,12 @@ class OCREngine:
             return result
 
         md5_hash = self._compute_md5(image_path)
-        if md5_hash in self._page_cache:
-            logger.info(f"[OCR CACHE HIT] {image_path.name} aus MD5-Cache geladen (0.00s).")
-            return self._page_cache[md5_hash]
+        with self._cache_lock:
+            cached = self._page_cache.get(md5_hash)
+            if cached is not None:
+                self._page_cache.move_to_end(md5_hash)
+                logger.info(f"[OCR CACHE HIT] {image_path.name} aus MD5-Cache geladen.")
+                return dict(cached)
 
         if not HAS_PYTESSERACT:
             logger.error("[OCR ERROR] pytesseract/Tesseract ist nicht verfügbar.")
@@ -81,12 +92,15 @@ class OCREngine:
                 f"[OCR] {len(text)} Zeichen, Qualität {score:.2f} aus {image_path.name}."
             )
             res = {"text": text, "confidence": round(score, 4), "status": status}
-            self._page_cache[md5_hash] = res
+            with self._cache_lock:
+                self._page_cache[md5_hash] = dict(res)
+                self._page_cache.move_to_end(md5_hash)
+                while len(self._page_cache) > self._cache_limit:
+                    self._page_cache.popitem(last=False)
             return res
         except Exception as exc:
             logger.exception(f"[OCR ERROR] Texterkennung fehlgeschlagen: {exc}")
             res = {"text": "", "confidence": 0.0, "status": f"OCR_FAILED: {exc}"}
-            self._page_cache[md5_hash] = res
             return res
 
     def extract_batch_images_parallel(self, image_paths: List[Path], max_workers: int = 4) -> Dict[str, Dict[str, Any]]:

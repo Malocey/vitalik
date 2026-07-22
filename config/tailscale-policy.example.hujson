@@ -1,0 +1,31 @@
+{
+  "groups": {
+    "group:vitali-admin": ["vitaligebel@googlemail.com"]
+  },
+  "tagOwners": {
+    "tag:document-server": ["group:vitali-admin"]
+  },
+  "postures": {
+    "posture:trusted-client": [
+      "node:tsReleaseTrack == 'stable'",
+      "node:tsAutoUpdate == true"
+    ]
+  },
+  "grants": [
+    {
+      "src": ["group:vitali-admin"],
+      "dst": ["tag:document-server"],
+      "ip": ["tcp:443", "tcp:5900", "tcp:3389"],
+      "srcPosture": ["posture:trusted-client"]
+    }
+  ],
+  "ssh": [
+    {
+      "action": "check",
+      "checkPeriod": "always",
+      "src": ["group:vitali-admin"],
+      "dst": ["tag:document-server"],
+      "users": ["autogroup:nonroot"]
+    }
+  ]
+}

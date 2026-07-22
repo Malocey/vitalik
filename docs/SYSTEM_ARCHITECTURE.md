@@ -47,7 +47,8 @@ sichere Ordnerlauf liegt in `src/core/process_document_folder.py`.
 | Wiki | `wiki_engine.py` | Markdown-Seiten, Index und Graphdaten | integriert |
 | Ordnerlauf | `process_document_folder.py` | Done-Markierung und CSV-Inventar | integriert |
 | Benchmark | `benchmark_document_pipeline.py` | read-only Qualitätsmessung | integriert |
-| Fast Lane | `fast_lane.py` | deterministische Routenentscheidung (<0.08s) | integriert |
+| Fast Lane | `fast_lane.py` | deterministische Routenentscheidung | integriert, Benchmark ausstehend |
+| Control Center | `dashboard_server.py`, `admin_service.py` | private Administration, Health und Logs | integriert |
 | Job-Engine | `document_jobs.py`, `job_repository.py`, `pipeline_job_adapter.py` | Leasing, Retry und Crash-Recovery | integriert |
 | Kontaktgedächtnis | `contact_memory.py` | Kunden/Lieferanten lernen und deduplizieren | integriert |
 | Matching | `matching_engine.py` | Rechnungen und Lieferscheine abgleichen | integriert |
@@ -79,6 +80,13 @@ Die Endpunkte werden über `LM_STUDIO_ENDPOINTS` konfiguriert. Der Client begren
 parallele Anfragen pro Rechner, überspringt vorübergehend fehlerhafte Worker und
 verwendet lokale deterministische Fallbacks, wo dies fachlich sicher möglich ist.
 Details stehen in [lm_studio_cluster.md](lm_studio_cluster.md).
+
+## Privater Fernzugriff
+
+Das Dashboard bindet nur an Loopback und wird über Tailscale Serve privat per HTTPS
+bereitgestellt. API-Zugriffe verlangen eine lokale Konsole oder einen vom lokalen
+Proxy bestätigten, explizit erlaubten Tailnet-Benutzer. Details stehen in
+[REMOTE_ACCESS.md](REMOTE_ACCESS.md).
 
 ## Job- und Kontaktintegration
 

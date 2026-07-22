@@ -10,6 +10,7 @@ Basiert auf FastAPI. Stellt ein interaktives REST-API und Web-Views für:
 
 import sys
 import logging
+import os
 from pathlib import Path
 from typing import Dict, Any, List
 
@@ -20,7 +21,7 @@ if hasattr(sys.stdout, "reconfigure"):
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel
 
 # Projektpfad auflösen
@@ -36,6 +37,13 @@ from src.parser.pdf_engine import pdf_engine
 from src.parser.analyzer import document_analyzer
 from src.core.validation_shield import validation_shield
 from src.core.mocks import mock_drive, mock_telegram, mock_sevdesk
+from src.core.admin_security import (
+    RemoteAdminAuthMiddleware, require_role, resolve_allowed_path,
+    safe_contact_entity, safe_job,
+)
+from src.core.admin_service import (
+    audit_event, health_snapshot, processing_control, read_redacted_logs,
+)
 
 logger = logging.getLogger("DashboardServer")
 
@@ -54,25 +62,23 @@ class IngestRequest(BaseModel):
     note: str
     title: str = "Geschäftlicher & Privater Kontext"
 
+class AdminActionRequest(BaseModel):
+    action: str
+    job_id: str = ""
+
 
 app = FastAPI(title="VG Delikatessen Dashboard Server", version="2.0")
 
-# CORS Middleware
+app.add_middleware(RemoteAdminAuthMiddleware)
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    TrustedHostMiddleware,
+    allowed_hosts=["localhost", "127.0.0.1", "[::1]", "testserver", "*.ts.net"],
 )
 
 DASHBOARD_DIR = BASE_DIR / "dashboard"
 DASHBOARD_DIR.mkdir(parents=True, exist_ok=True)
 
-# Mount Mock Drive folder for direct PDF opening/downloading
-if MOCK_DRIVE_DIR.exists():
-    app.mount("/static/drive", StaticFiles(directory=str(MOCK_DRIVE_DIR)), name="drive")
-    print(f"[DashboardServer] Mock Drive gemountet unter /static/drive ({MOCK_DRIVE_DIR})")
+# Belege werden absichtlich nicht als unauthentisierte statische Dateien gemountet.
 
 # HTML Page Endpoints
 @app.get("/", response_class=HTMLResponse)
@@ -96,6 +102,13 @@ async def read_wiki_graph():
         return graph_file.read_text(encoding="utf-8")
     raise HTTPException(status_code=404, detail="wiki_graph.html nicht gefunden")
 
+@app.get("/admin", response_class=HTMLResponse)
+async def read_admin_console():
+    admin_file = DASHBOARD_DIR / "admin.html"
+    if admin_file.exists():
+        return admin_file.read_text(encoding="utf-8")
+    raise HTTPException(status_code=404, detail="admin.html nicht gefunden")
+
 
 # API Endpoints
 from src.core.contact_memory import contact_memory
@@ -114,29 +127,25 @@ async def get_stats():
     }
 
 @app.get("/api/jobs")
-async def get_jobs():
+async def get_jobs(request: Request):
+    require_role(request, {"viewer", "operator", "admin"})
     try:
         jobs = archive_pipeline.job_adapter.engine.repo.list_jobs(limit=100)
-        stats = {
-            "total": len(jobs),
-            "COMMITTED": sum(1 for j in jobs if j.get("status") == "COMMITTED"),
-            "LEASED": sum(1 for j in jobs if j.get("status") == "LEASED"),
-            "NEW": sum(1 for j in jobs if j.get("status") == "NEW"),
-            "ANALYZED": sum(1 for j in jobs if j.get("status") == "ANALYZED"),
-            "FAILED": sum(1 for j in jobs if j.get("status") == "FAILED"),
-        }
-        return {"status": "success", "summary": stats, "jobs": jobs}
+        stats = archive_pipeline.job_adapter.engine.get_progress_summary()
+        safe_jobs = [safe_job(job) for job in jobs]
+        return {"status": "success", "summary": stats, "jobs": safe_jobs}
     except Exception as e:
         return {"status": "error", "message": str(e), "summary": {}, "jobs": []}
 
 @app.get("/api/contacts")
-async def get_contacts():
+async def get_contacts(request: Request):
+    require_role(request, {"viewer", "operator", "admin"})
     try:
         entities = contact_memory.get_all_entities()
         return {
             "status": "success",
             "total_entities": len(entities),
-            "entities": entities
+            "entities": [safe_contact_entity(entity) for entity in entities]
         }
     except Exception as e:
         return {"status": "error", "message": str(e), "entities": []}
@@ -149,9 +158,9 @@ async def get_fast_lane_stats():
         return {
             "status": "success",
             "fast_lane_active": True,
-            "baseline_speed_per_doc": "0.08s (Fast Lane) vs 45.0s (LLM)",
+            "measurement_status": "benchmark_required",
             "total_committed_jobs": len(committed_jobs),
-            "estimated_speedup": "Up to 50x throughput for standard receipts"
+            "estimated_speedup": None
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -175,6 +184,36 @@ async def get_price_trends():
         return {"status": "success", "total_items": len(trends), "warnings_count": warnings_count, "trends": trends}
     except Exception as e:
         return {"status": "error", "message": str(e), "trends": []}
+
+@app.get("/api/admin/health")
+async def get_admin_health(request: Request):
+    require_role(request, {"viewer", "operator", "admin"})
+    return health_snapshot(archive_pipeline, default_llm_client, rag_engine)
+
+@app.get("/api/admin/logs")
+async def get_admin_logs(request: Request, limit: int = 200):
+    require_role(request, {"operator", "admin"})
+    return {"status": "success", "lines": read_redacted_logs(limit)}
+
+@app.post("/api/admin/action")
+async def post_admin_action(request: Request, command: AdminActionRequest):
+    identity = require_role(request, {"operator", "admin"})
+    if request.headers.get("x-vitalik-action") != "confirmed":
+        raise HTTPException(status_code=400, detail="Explicit action confirmation header missing")
+    action = command.action.strip().lower()
+    if action == "pause":
+        processing_control.set_paused(True)
+    elif action == "resume":
+        processing_control.set_paused(False)
+    elif action == "release_expired_leases":
+        archive_pipeline.job_adapter.engine.release_expired_leases()
+    elif action == "retry_job" and command.job_id:
+        if not archive_pipeline.job_adapter.engine.retry_job(command.job_id):
+            raise HTTPException(status_code=409, detail="Job cannot be retried from its current state")
+    else:
+        raise HTTPException(status_code=400, detail="Action is not allowlisted")
+    audit_event(identity.login, action, command.job_id)
+    return {"status": "success", "action": action}
 
 @app.get("/api/wiki")
 async def get_wiki():
@@ -237,32 +276,57 @@ from src.parser.multi_format_engine import multi_format_engine
 @app.post("/api/scan-directory")
 async def post_scan_directory(request: ScanRequest):
     dir_str = request.directory_path.strip()
-    target_dir = Path(dir_str) if dir_str else TESTDATA_DIR
+    inbox_dir = DATA_DIR / "inbox"
+    inbox_dir.mkdir(parents=True, exist_ok=True)
+    configured_roots = [
+        Path(value).expanduser().resolve()
+        for value in os.getenv("REMOTE_SCAN_ROOTS", "").split(os.pathsep)
+        if value.strip()
+    ] or [TESTDATA_DIR.resolve(), inbox_dir.resolve()]
+    try:
+        target_dir = resolve_allowed_path(
+            Path(dir_str).expanduser() if dir_str else inbox_dir, configured_roots
+        )
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Verzeichnis liegt außerhalb der freigegebenen Scan-Wurzeln.")
 
     if not target_dir.exists():
         raise HTTPException(status_code=400, detail=f"Verzeichnis '{target_dir}' existiert nicht auf dem System.")
 
     scanned_results = []
     supported_extensions = list(multi_format_engine.SUPPORTED_EXTENSIONS)
-    files = [f for f in target_dir.rglob("*") if f.is_file() and f.suffix.lower() in supported_extensions]
+    files = []
+    for candidate in target_dir.rglob("*"):
+        if not candidate.is_file() or candidate.suffix.lower() not in supported_extensions:
+            continue
+        resolved = candidate.resolve()
+        if target_dir == resolved or target_dir in resolved.parents:
+            files.append(resolved)
 
-    batch_pages_info = multi_format_engine.extract_batch_parallel(files, max_workers=8)
+    non_pdf_files = [path for path in files if path.suffix.lower() != ".pdf"]
+    batch_pages_info = multi_format_engine.extract_batch_parallel(non_pdf_files, max_workers=8)
 
     for file_path in files:
         try:
+            if file_path.suffix.lower() == ".pdf":
+                pipeline_results = archive_pipeline.process_pdf_archive(file_path, source_action="keep")
+                for result in pipeline_results:
+                    doc = result.get("doc", {})
+                    scanned_results.append({
+                        "filename": file_path.name, "lieferant": doc.get("lieferant"),
+                        "brutto": doc.get("brutto"), "netto": doc.get("netto"),
+                        "steuer": doc.get("steuer"), "skr03": doc.get("skr03_konto"),
+                        "validation_status": doc.get("validation_status"),
+                        "reason": result.get("reason"), "saved_path": result.get("saved_path"),
+                    })
+                continue
             pages_info = batch_pages_info.get(str(file_path)) or multi_format_engine.extract_document(file_path)
             extracted_docs = document_analyzer.analyze_page_stack(pages_info)
             
             for doc in extracted_docs:
                 passed, reason, enriched_doc = validation_shield.validate_document(doc)
                 
-                # Zerschneiden und Einsortieren des Belegs über sorter
-                sort_result = archive_pipeline.sorter.sort_and_save_pdf(
-                    input_pdf_path=file_path,
-                    start_page=doc.get("start_seite", 1),
-                    end_page=doc.get("end_seite", 1),
-                    doc_data=enriched_doc
-                )
+                sort_result = multi_format_engine.persist_non_pdf_document(file_path, enriched_doc)
                 saved_path = sort_result["saved_path"]
                 
                 if passed:
@@ -322,14 +386,17 @@ async def post_ingest(request: IngestRequest):
     return {"status": "success", "message": "Informationen erfolgreich im Karpathy-Wiki indexiert."}
 
 
-def run_dashboard_server(port: int = 8000):
+def run_dashboard_server(port: int = 8000, host: str = "127.0.0.1"):
     import uvicorn
     print(f"\n=======================================================")
     print(f"🚀 VG Delikatessen Dashboard (FastAPI & Graph) gestartet!")
     print(f"👉 Öffne im Browser: http://localhost:{port}")
     print(f"=======================================================\n")
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 if __name__ == "__main__":
-    run_dashboard_server()
+    run_dashboard_server(
+        port=int(os.getenv("DASHBOARD_PORT", "8000")),
+        host=os.getenv("DASHBOARD_HOST", "127.0.0.1"),
+    )
