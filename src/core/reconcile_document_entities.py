@@ -4,6 +4,8 @@ import json
 import csv
 import logging
 import re
+import unicodedata
+import os
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple, Set
@@ -14,13 +16,21 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Evidenzbasierte Bestandsabstimmung")
     parser.add_argument("--db", type=str, default="data/rag_index.db", help="Pfad zur SQLite-Datenbank")
     parser.add_argument("--report", type=str, default=None, help="Verzeichnis für Berichte")
-    parser.add_argument("--apply", action="store_true", help="Änderungen in die Datenbank schreiben")
-    parser.add_argument("--dry-run", action="store_true", help="Nur simulieren (Standard, wenn --apply nicht gesetzt)")
+    parser.add_argument("--backup-dir", type=str, default=None, help="Verzeichnis für das Backup (wenn --apply genutzt wird)")
+
+    group = parser.add_mutually_exclusive_group(required=False)
+    group.add_argument("--apply", action="store_true", help="Änderungen in die Datenbank schreiben")
+    group.add_argument("--dry-run", action="store_true", help="Nur simulieren (Standard, wenn --apply nicht gesetzt)")
+
     return parser.parse_args()
 
-def backup_database(db_path: Path) -> None:
+def backup_database(db_path: Path, backup_dir_base: Optional[str] = None) -> None:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_dir = Path(f"data/backups/entity_reconciliation/{timestamp}")
+    if backup_dir_base:
+        backup_dir = Path(backup_dir_base) / timestamp
+    else:
+        backup_dir = Path(f"data/backups/entity_reconciliation/{timestamp}")
+
     backup_dir.mkdir(parents=True, exist_ok=True)
     backup_path = backup_dir / "rag_index.db"
 
@@ -49,18 +59,19 @@ def backup_database(db_path: Path) -> None:
 def normalize_text(text: str) -> str:
     if not text:
         return ""
-    text = str(text).lower()
+    text = unicodedata.normalize("NFKC", str(text)).casefold()
     return re.sub(r'[^a-z0-9]', '', text)
 
-def find_entity_by_strong_id(value: str, id_type: str, entities: List[Dict[str, Any]]) -> Optional[str]:
+def find_entities_by_strong_id(value: str, id_type: str, entities: List[Dict[str, Any]]) -> Set[str]:
+    found = set()
     if not value:
-        return None
+        return found
     val_norm = normalize_text(value)
     for entity in entities:
         ent_val = entity.get(id_type)
         if ent_val and normalize_text(ent_val) == val_norm:
-            return entity["entity_id"]
-    return None
+            found.add(entity["entity_id"])
+    return found
 
 def extract_strong_ids_from_text(text: str) -> Dict[str, List[str]]:
     ids = {"iban": [], "ust_id": [], "email": []}
@@ -70,7 +81,6 @@ def extract_strong_ids_from_text(text: str) -> Dict[str, List[str]]:
     ibans = re.findall(r'[A-Z]{2}\d{2}[A-Z0-9]{11,30}', text.replace(' ', '').upper())
     ids["iban"] = list(set(ibans))
 
-    # German USt-ID (DE followed by 9 digits), ATU, CHE
     ust_ids = re.findall(r'(DE|ATU|CHE)[\s\-]?([0-9]{8,11})', text.upper())
     ids["ust_id"] = list(set([u[0] + u[1] for u in ust_ids]))
 
@@ -79,7 +89,22 @@ def extract_strong_ids_from_text(text: str) -> Dict[str, List[str]]:
 
     return ids
 
-def reconcile_entities(db_path: str, report_dir: Optional[str] = None, apply: bool = False):
+def atomic_write(filepath: Path, content: str, is_jsonl: bool = False, is_csv: bool = False, fieldnames: list = None, data: Any = None):
+    tmp_path = filepath.with_suffix(filepath.suffix + ".tmp")
+    with open(tmp_path, "w", encoding="utf-8", newline="" if is_csv else None) as f:
+        if is_jsonl:
+            for entry in data:
+                f.write(json.dumps(entry) + "\n")
+        elif is_csv:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(data)
+        else:
+            json.dump(data, f, indent=2)
+
+    os.replace(tmp_path, filepath)
+
+def reconcile_entities(db_path: str, report_dir: Optional[str] = None, apply: bool = False, backup_dir: Optional[str] = None):
     db_path_obj = Path(db_path)
 
     if not db_path_obj.exists():
@@ -93,7 +118,7 @@ def reconcile_entities(db_path: str, report_dir: Optional[str] = None, apply: bo
     report_path.mkdir(parents=True, exist_ok=True)
 
     if apply:
-        backup_database(db_path_obj)
+        backup_database(db_path_obj, backup_dir)
 
     db = sqlite3.connect(db_path_obj)
     db.row_factory = sqlite3.Row
@@ -105,15 +130,12 @@ def reconcile_entities(db_path: str, report_dir: Optional[str] = None, apply: bo
     try:
         cursor = db.cursor()
 
-        # Load entities
         cursor.execute("SELECT * FROM contact_entities")
         entities = [dict(row) for row in cursor.fetchall()]
 
-        # Load contact aliases for weak matching
         cursor.execute("SELECT * FROM contact_aliases")
         aliases = [dict(row) for row in cursor.fetchall()]
 
-        # Process belege
         cursor.execute("SELECT * FROM belege")
         belege = [dict(row) for row in cursor.fetchall()]
 
@@ -122,16 +144,26 @@ def reconcile_entities(db_path: str, report_dir: Optional[str] = None, apply: bo
         for beleg in belege:
             summary_data["processed"] += 1
             beleg_id = beleg["beleg_id"]
+            belegtyp = beleg.get("belegtyp") or ""
+
+            # Determine likely role of the document to avoid mapping supplier to customer
+            is_supplier_doc = belegtyp.lower() in ["rechnung", "ausgabe", "bon", "quittung"]
+            is_customer_doc = belegtyp.lower() in ["einnahme", "ausgangsrechnung"]
 
             raw_text = ""
-            if beleg.get("raw_text_path") and Path(beleg["raw_text_path"]).exists():
-                try:
-                    with open(beleg["raw_text_path"], "r", encoding="utf-8") as f:
-                        raw_text = f.read()
-                except Exception:
-                    pass
+            file_unreadable = False
+            if beleg.get("raw_text_path"):
+                p = Path(beleg["raw_text_path"])
+                if not p.exists():
+                    file_unreadable = True
+                else:
+                    try:
+                        with open(p, "r", encoding="utf-8") as f:
+                            raw_text = f.read()
+                    except Exception:
+                        file_unreadable = True
 
-            if not raw_text:
+            if not raw_text and not file_unreadable:
                 try:
                     cursor.execute("SELECT rohtext FROM belege_ocr_fts WHERE beleg_id = ?", (beleg_id,))
                     row = cursor.fetchone()
@@ -143,31 +175,25 @@ def reconcile_entities(db_path: str, report_dir: Optional[str] = None, apply: bo
             found_entities = set()
             conflict_reasons = []
 
-            # 1. Check SevDesk ID from Beleg
+            if file_unreadable:
+                conflict_reasons.append("SOURCE_UNREADABLE")
+
             sevdesk_id = beleg.get("sevdesk_kunden_nr")
             if sevdesk_id:
-                ent = find_entity_by_strong_id(sevdesk_id, "sevdesk_id", entities)
-                if ent:
-                    found_entities.add(ent)
+                found_entities.update(find_entities_by_strong_id(sevdesk_id, "sevdesk_id", entities))
 
-            # 2. Extract strong IDs from OCR
             extracted_ids = extract_strong_ids_from_text(raw_text)
 
             for iban in extracted_ids["iban"]:
-                ent = find_entity_by_strong_id(iban, "iban", entities)
-                if ent:
-                    found_entities.add(ent)
+                found_entities.update(find_entities_by_strong_id(iban, "iban", entities))
 
             for ust_id in extracted_ids["ust_id"]:
-                ent = find_entity_by_strong_id(ust_id, "tax_id", entities)
-                if ent:
-                    found_entities.add(ent)
+                found_entities.update(find_entities_by_strong_id(ust_id, "tax_id", entities))
 
             for email in extracted_ids["email"]:
-                ent = find_entity_by_strong_id(email, "email", entities)
-                if ent:
-                    found_entities.add(ent)
+                found_entities.update(find_entities_by_strong_id(email, "email", entities))
 
+            # Check for conflict among strong IDs
             if len(found_entities) > 1:
                 conflict_reasons.append("Unterschiedliche starke Identifikatoren zeigen auf unterschiedliche Kontakte.")
 
@@ -177,13 +203,20 @@ def reconcile_entities(db_path: str, report_dir: Optional[str] = None, apply: bo
             weak_entities = set()
             for al in aliases:
                 norm_alias = al["normalized_alias"]
-                # Must be a substantial word match to avoid over-matching
                 if len(norm_alias) > 3 and (norm_alias in normalize_text(filename) or norm_alias in normalize_text(supplier_name) or norm_alias in normalize_text(raw_text)):
                     weak_entities.add(al["entity_id"])
 
-
             if len(found_entities) == 1:
                 strong_ent = list(found_entities)[0]
+
+                # Check entity role mismatch
+                ent_record = next((e for e in entities if e["entity_id"] == strong_ent), None)
+                if ent_record:
+                    if is_supplier_doc and ent_record["role"] == "customer":
+                        conflict_reasons.append(f"Kontakt {strong_ent} hat Rolle 'customer', Beleg ist aber Lieferantenbeleg.")
+                    elif is_customer_doc and ent_record["role"] == "supplier":
+                        conflict_reasons.append(f"Kontakt {strong_ent} hat Rolle 'supplier', Beleg ist aber Kundenbeleg.")
+
                 other_weak_entities = weak_entities - {strong_ent}
                 if other_weak_entities:
                     conflict_reasons.append(f"Starker Identifikator zeigt auf {strong_ent}, aber schwache Evidenz (OCR/Name/Datei) deutet auf andere Kontakte: {other_weak_entities}.")
@@ -199,8 +232,12 @@ def reconcile_entities(db_path: str, report_dir: Optional[str] = None, apply: bo
             status = "UNCHANGED"
             proposed_entity = None
 
+            if file_unreadable:
+                status = "SOURCE_UNREADABLE"
+
             if conflict_reasons:
-                status = "REVIEW_CONFLICT"
+                if status != "SOURCE_UNREADABLE":
+                    status = "REVIEW_CONFLICT"
                 summary_data["conflicts"] += 1
                 conflicts.append({
                     "beleg_id": beleg_id,
@@ -208,7 +245,7 @@ def reconcile_entities(db_path: str, report_dir: Optional[str] = None, apply: bo
                     "lieferant": supplier_name,
                     "raw_text_path": beleg.get("raw_text_path", "")
                 })
-            else:
+            elif not file_unreadable:
                 if len(found_entities) == 1:
                     proposed_entity = list(found_entities)[0]
                     if proposed_entity != current_entity_id:
@@ -241,24 +278,18 @@ def reconcile_entities(db_path: str, report_dir: Optional[str] = None, apply: bo
     finally:
         db.close()
 
-    with open(report_path / "summary.json", "w", encoding="utf-8") as f:
-        json.dump(summary_data, f, indent=2)
-
-    with open(report_path / "conflicts.csv", "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["beleg_id", "reason", "lieferant", "raw_text_path"])
-        writer.writeheader()
-        writer.writerows(conflicts)
-
-    with open(report_path / "audit.jsonl", "w", encoding="utf-8") as f:
-        for entry in audit_log:
-            f.write(json.dumps(entry) + "\n")
+    atomic_write(report_path / "summary.json", "", data=summary_data)
+    atomic_write(report_path / "conflicts.csv", "", is_csv=True, fieldnames=["beleg_id", "reason", "lieferant", "raw_text_path"], data=conflicts)
+    atomic_write(report_path / "audit.jsonl", "", is_jsonl=True, data=audit_log)
 
     print(f"Abstimmung abgeschlossen. Berichte geschrieben nach: {report_path}")
     print(f"Zusammenfassung: {summary_data}")
 
 if __name__ == "__main__":
     args = parse_args()
+
+    # If explicitly passed --apply, dry_run should be false
+    # if --dry-run is passed, apply is implicitly false, handled by mutually exclusive group
+
     apply = args.apply
-    if apply:
-        args.dry_run = False
-    reconcile_entities(args.db, args.report, apply)
+    reconcile_entities(args.db, args.report, apply, args.backup_dir)
