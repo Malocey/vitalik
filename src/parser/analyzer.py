@@ -472,7 +472,7 @@ class DocumentAnalyzer:
                     "Systembenachrichtigung / Login": "SYSTEM_INFO",
                     "Vertrags- & AGB-Mitteilung": "VERTRAGS_INFO",
                     "Werbung / Newsletter": "SPAM_FILTERED",
-                    "Quittung / Zahlungsbestaetigung": "PASSED"
+                    "Quittung / Zahlungsbestaetigung": "MANUAL_REVIEW_NEEDED"
                 }
                 dt = type_result["document_type"]
                 protected_type = {

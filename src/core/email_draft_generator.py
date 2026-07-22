@@ -4,6 +4,7 @@ Erstellt professionelle E-Mail-Antwortentwürfe in Vitalis Tonalität und speich
 """
 
 import json
+import hashlib
 import logging
 import sqlite3
 from pathlib import Path
@@ -65,7 +66,7 @@ class EmailDraftGenerator:
             body = (
                 f"{greeting}\n\n"
                 f"vielen Dank für die Zusendung der Belege ('{subject}').\n"
-                f"Die Rechnung wurde in unserem System erfasst, geprüft und zur Zahlung freigegeben.\n\n"
+                f"Wir prüfen die Unterlagen intern. Dieser Entwurf bestätigt weder die sachliche Prüfung noch eine Zahlungsfreigabe.\n\n"
                 f"{farewell}"
             )
         elif intent == "LIEFERSCHEIN_DISCREPANCY":
@@ -78,8 +79,8 @@ class EmailDraftGenerator:
         elif intent == "MAHNUNG_ZAHLUNGSERINNERUNG":
             body = (
                 f"{greeting}\n\n"
-                f"vielen Dank für Ihren Hinweis. Wir haben den Vorgang umgehend in unserer Buchhaltung geprüft.\n"
-                f"Falls der Betrag noch nicht angewiesen wurde, veranlassen wir die Überweisung heute.\n\n"
+                f"vielen Dank für Ihren Hinweis. Wir prüfen den Vorgang und den Zahlungsstatus intern.\n"
+                f"Anschließend melden wir uns mit einer belastbaren Rückmeldung.\n\n"
                 f"{farewell}"
             )
         else:
@@ -90,7 +91,8 @@ class EmailDraftGenerator:
                 f"{farewell}"
             )
 
-        draft_id = f"draft_{abs(hash(subject + sender + intent))}"
+        stable_key = "\x1f".join((subject, sender, intent)).encode("utf-8")
+        draft_id = f"draft_{hashlib.sha256(stable_key).hexdigest()[:24]}"
         draft_res = {
             "draft_id": draft_id,
             "original_subject": subject,

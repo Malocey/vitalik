@@ -31,6 +31,7 @@ data/reports/
 data/temp/
 data/testdata/*.pdf
 data/testdata/*.csv
+data/testdata/*.eml
 data/mock_storage/
 data/vectorstore/
 data/checkpoint.json

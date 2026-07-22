@@ -195,14 +195,20 @@ class MultiFormatEngine:
                             img_filename = part.get_filename() or "attachment.png"
                             img_bytes = part.get_payload(decode=True)
                             if img_bytes:
-                                tmp_img = Path(tempfile.gettempdir()) / f"mail_img_{abs(hash(img_filename))}_{img_filename}"
-                                tmp_img.write_bytes(img_bytes)
-                                ocr_res = ocr_engine.extract_with_quality(tmp_img)
-                                ocr_text = ocr_res.get("text", "").strip()
-                                if ocr_text:
-                                    attachment_texts.append(f"=== BILD-ANHANG: {img_filename} (OCR) ===\n{ocr_text}")
-                                if tmp_img.exists():
-                                    tmp_img.unlink()
+                                if len(img_bytes) > 20 * 1024 * 1024:
+                                    logger.warning("[MultiFormatEngine] Bild-Anhang über 20 MB übersprungen")
+                                    continue
+                                suffix = Path(img_filename).suffix.lower()
+                                if suffix not in {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp"}:
+                                    suffix = ".img"
+                                with tempfile.TemporaryDirectory(prefix="mail-ocr-") as temp_dir:
+                                    tmp_img = Path(temp_dir) / f"attachment{suffix}"
+                                    tmp_img.write_bytes(img_bytes)
+                                    ocr_res = ocr_engine.extract_with_quality(tmp_img)
+                                    ocr_text = ocr_res.get("text", "").strip()
+                                    if ocr_text:
+                                        safe_name = Path(img_filename).name
+                                        attachment_texts.append(f"=== BILD-ANHANG: {safe_name} (OCR) ===\n{ocr_text}")
                         except Exception as img_err:
                             logger.warning(f"[MultiFormatEngine] OCR-Fehler bei Bild-Anhang in E-Mail: {img_err}")
             else:

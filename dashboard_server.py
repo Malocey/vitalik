@@ -265,11 +265,19 @@ async def post_rag(request: QueryRequest):
     
     karpathy_wiki.log_event("QUERY", f"RAG-Abfrage: '{query[:40]}' → Antwort im Wiki gespeichert")
 
+    return {
+        "query": query,
+        "answer": answer,
+        "retrieved_chunks": results,
+        "memory_saved": True,
+    }
+
 from src.core.email_decision_engine import email_decision_engine
 from src.core.email_draft_generator import email_draft_generator
 
 @app.get("/api/email/drafts")
-async def get_email_drafts():
+async def get_email_drafts(request: Request):
+    require_role(request, {"viewer", "operator", "admin"})
     try:
         drafts = email_draft_generator.get_pending_drafts()
         return {"status": "success", "total_drafts": len(drafts), "drafts": drafts}

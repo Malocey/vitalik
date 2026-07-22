@@ -2,6 +2,7 @@ import tempfile
 from pathlib import Path
 from src.core.email_decision_engine import email_decision_engine
 from src.core.email_draft_generator import EmailDraftGenerator
+from src.core.validation_shield import ValidationShield
 
 
 def test_email_decision_classification():
@@ -41,14 +42,35 @@ def test_email_draft_generation():
         draft = generator.generate_draft(email_data, classification)
         assert draft["intent"] == "RECHNUNG_INVOICE"
         assert "Servus Metro Grosshandel-Team" in draft["generated_draft"]
-        assert "Rechnung wurde in unserem System erfasst" in draft["generated_draft"]
+        assert "weder die sachliche Prüfung noch eine Zahlungsfreigabe" in draft["generated_draft"]
         
         pending = generator.get_pending_drafts()
         assert len(pending) == 1
         assert pending[0]["supplier_name"] == "Metro Grosshandel"
+
+        repeated = generator.generate_draft(email_data, classification)
+        assert repeated["draft_id"] == draft["draft_id"]
+        assert len(generator.get_pending_drafts()) == 1
     finally:
         if tmp_db.exists():
             try:
                 tmp_db.unlink()
             except OSError:
                 pass
+
+
+def test_non_bookable_email_never_passes_without_amount():
+    shield = ValidationShield()
+    passed, _, receipt = shield.validate_document({
+        "belegtyp": "Quittung / Zahlungsbestaetigung", "brutto": 0.0,
+        "raw_text": "Quittung", "confidence_score": 1.0,
+    })
+    assert not passed
+    assert receipt["validation_status"] == "MANUAL_REVIEW_NEEDED"
+
+    passed, _, price_notice = shield.validate_document({
+        "belegtyp": "Preiserhöhungs-Mitteilung", "brutto": 0.0,
+        "raw_text": "Preisanpassung", "confidence_score": 1.0,
+    })
+    assert not passed
+    assert price_notice["validation_status"] == "EMAIL_INFO"

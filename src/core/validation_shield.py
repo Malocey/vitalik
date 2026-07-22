@@ -62,18 +62,17 @@ class ValidationShield:
             return False, reason, doc_data
 
         if belegtyp in {"Quittung / Zahlungsbestaetigung", "Quittung"}:
-            doc_data["skr03_konto"] = "4900"
-            doc_data["skr04_konto"] = "6300"
-            doc_data["validation_status"] = "PASSED"
-            doc_data["validation_reason"] = "Digitale Quittung / Beleg erfolgreich validiert."
-            return True, "Digitale Quittung / Beleg erfolgreich validiert.", doc_data
+            if float(doc_data.get("brutto", 0.0) or 0.0) <= 0.0:
+                reason = "Quittung erkannt, aber ohne belastbaren Betrag; manuelle Prüfung erforderlich."
+                doc_data["validation_status"] = "MANUAL_REVIEW_NEEDED"
+                doc_data["validation_reason"] = reason
+                return False, reason, doc_data
 
         if belegtyp in {"Preiserhöhungs-Mitteilung"}:
-            doc_data["skr03_konto"] = "3400"
-            doc_data["skr04_konto"] = "5400"
-            doc_data["validation_status"] = "PASSED"
-            doc_data["validation_reason"] = "Preiserhöhungs-Mitteilung erfasst."
-            return True, "Preiserhöhungs-Mitteilung erfasst.", doc_data
+            reason = "Preiserhöhungs-Mitteilung informationell erfasst; kein buchbarer Beleg."
+            doc_data["validation_status"] = "EMAIL_INFO"
+            doc_data["validation_reason"] = reason
+            return False, reason, doc_data
 
         if belegtyp in {"E-Mail Korrespondenz", "E-Mail", "Sonstiges"} and float(doc_data.get("brutto", 0.0) or 0.0) == 0.0:
             reason = "Informationelle E-Mail ohne Rechnungsbetrag erfasst."
