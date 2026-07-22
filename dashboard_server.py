@@ -264,12 +264,16 @@ async def post_rag(request: QueryRequest):
     
     karpathy_wiki.log_event("QUERY", f"RAG-Abfrage: '{query[:40]}' → Antwort im Wiki gespeichert")
 
-    return {
-        "query": query,
-        "answer": answer,
-        "retrieved_chunks": results,
-        "memory_saved": True
-    }
+from src.core.email_decision_engine import email_decision_engine
+from src.core.email_draft_generator import email_draft_generator
+
+@app.get("/api/email/drafts")
+async def get_email_drafts():
+    try:
+        drafts = email_draft_generator.get_pending_drafts()
+        return {"status": "success", "total_drafts": len(drafts), "drafts": drafts}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "drafts": []}
 
 from src.parser.multi_format_engine import multi_format_engine
 
@@ -329,6 +333,20 @@ async def post_scan_directory(request: ScanRequest):
                 sort_result = multi_format_engine.persist_non_pdf_document(file_path, enriched_doc)
                 saved_path = sort_result["saved_path"]
                 
+                if file_path.suffix.lower() in [".eml", ".msg"]:
+                    email_text = pages_info[0]["full_text"] if pages_info else ""
+                    classification = email_decision_engine.classify_email({
+                        "subject": file_path.stem,
+                        "from": file_path.name,
+                        "body": email_text
+                    })
+                    draft = email_draft_generator.generate_draft({
+                        "subject": file_path.stem,
+                        "from": file_path.name,
+                        "body": email_text
+                    }, classification)
+                    logger.info(f"[E-Mail-Draft] KI-Entwurf '{draft['draft_id']}' für '{file_path.name}' generiert.")
+
                 if passed:
                     mock_sevdesk.post_voucher(enriched_doc)
                 tg_msg = mock_telegram.send_approval_request(enriched_doc)

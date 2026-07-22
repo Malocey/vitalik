@@ -53,6 +53,7 @@ sichere Ordnerlauf liegt in `src/core/process_document_folder.py`.
 | Kontaktgedächtnis | `contact_memory.py` | Kunden/Lieferanten lernen und deduplizieren | integriert |
 | Matching | `matching_engine.py` | Rechnungen und Lieferscheine abgleichen | integriert |
 | Preis-Monitor | `price_monitor.py` | Einzelpreise & Inflationswarnungen verfolgen | integriert |
+| E-Mail KI | `email_decision_engine.py`, `email_draft_generator.py` | Absichtserkennung & KI-Antwort-Entwürfe | integriert |
 
 ## Persistenz und Daten
 

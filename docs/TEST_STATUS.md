@@ -11,7 +11,7 @@ python -m pytest
 Ergebnis der finalen Integrationsprüfung auf macOS mit Python 3.9.6:
 
 ```text
-130 passed in 3.81s
+139 passed in 6.52s
 ```
 
 Die vier Warnungen stammen von `urllib3`/LibreSSL und Hinweisen externer

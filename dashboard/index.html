@@ -627,6 +627,20 @@
                         <tr><td colspan="4" style="text-align: center; color: #94a3b8;">Keine Preishistorie vorhanden. Scan ausführen!</td></tr>
                     </tbody>
                 </table>
+        </div>
+    </div>
+
+    <!-- E-Mail Intelligence Panel: Draft Generator & KI-Antworten -->
+    <div class="panel" style="margin-top: 24px;">
+        <div class="panel-title">
+            <span>✉️</span> E-Mail KI-Antwort-Entwürfe (Live-Vorschau & Freigabe)
+        </div>
+        <div id="email-drafts-summary" style="font-size: 13px; color: #a5b4fc; font-weight: 600;">
+            Lade generierte E-Mail-Entwürfe...
+        </div>
+        <div id="email-drafts-container" style="max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; margin-top: 10px;">
+            <div style="color: #94a3b8; font-size: 13px; text-align: center; padding: 20px;">
+                Noch keine E-Mail-Entwürfe vorhanden. Kopieren Sie eine EML-Datei in den Scan-Ordner und starten Sie den Scan!
             </div>
         </div>
     </div>
@@ -638,6 +652,38 @@
             .replaceAll('&', '&amp;').replaceAll('<', '&lt;')
             .replaceAll('>', '&gt;').replaceAll('"', '&quot;')
             .replaceAll("'", '&#039;');
+
+        async function loadEmailDrafts() {
+            try {
+                const res = await fetch('/api/email/drafts');
+                const data = await res.json();
+                const summaryDiv = document.getElementById('email-drafts-summary');
+                const container = document.getElementById('email-drafts-container');
+                if (data.status === 'success') {
+                    summaryDiv.innerText = `Vorliegende KI-Entwürfe: ${data.total_drafts || 0}`;
+                    container.innerHTML = '';
+                    if (data.drafts && data.drafts.length > 0) {
+                        data.drafts.forEach(d => {
+                            const card = document.createElement('div');
+                            card.style.cssText = "background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 12px; padding: 14px;";
+                            card.innerHTML = `
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <strong style="color: #f8fafc; font-size: 14px;">✉️ Betreff: ${esc(d.original_subject)}</strong>
+                                    <span class="status-pill status-passed">${esc(d.intent)}</span>
+                                </div>
+                                <div style="font-size: 12px; color: #a5b4fc; margin-bottom: 6px;">
+                                    <strong>Lieferant:</strong> ${esc(d.supplier_name)} | <strong>Aktion:</strong> ${esc(d.suggested_action)}
+                                </div>
+                                <div style="background: rgba(0, 0, 0, 0.4); border-radius: 8px; padding: 10px; font-family: monospace; font-size: 12px; color: #34d399; white-space: pre-wrap; max-height: 120px; overflow-y: auto;">${esc(d.generated_draft)}</div>
+                            `;
+                            container.appendChild(card);
+                        });
+                    } else {
+                        container.innerHTML = '<div style="color: #94a3b8; font-size: 13px; text-align: center; padding: 20px;">Noch keine E-Mail-Entwürfe vorhanden. EML-Datei scannen!</div>';
+                    }
+                }
+            } catch (e) {}
+        }
 
         async function loadMatching() {
             try {
@@ -839,6 +885,11 @@
                 }
 
                 loadStats();
+                loadJobs();
+                loadContacts();
+                loadMatching();
+                loadPriceTrends();
+                loadEmailDrafts();
                 loadWikiPages();
                 loadIndexAndLog();
             } catch (e) {
@@ -966,6 +1017,7 @@
         loadContacts();
         loadMatching();
         loadPriceTrends();
+        loadEmailDrafts();
         loadWikiPages();
         loadIndexAndLog();
         runRAGSearch();
