@@ -171,6 +171,27 @@ def test_dry_run_leaves_db_untouched(temp_db, tmp_path):
     assert val_after is None
 
 
+def test_empty_candidate_memory_is_reported(tmp_path):
+    db_path = tmp_path / "empty_candidates.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript("""
+            CREATE TABLE contact_entities (entity_id TEXT, role TEXT, tax_id TEXT,
+                iban TEXT, email TEXT, sevdesk_id TEXT);
+            CREATE TABLE contact_aliases (normalized_alias TEXT, entity_id TEXT);
+            CREATE TABLE belege (beleg_id TEXT PRIMARY KEY, lieferant TEXT,
+                beleg_link TEXT, raw_text_path TEXT, sevdesk_kunden_nr TEXT,
+                contact_entity_id TEXT, belegtyp TEXT);
+            INSERT INTO belege (beleg_id, lieferant) VALUES ('B-1', 'Jensmann');
+        """)
+    report_dir = tmp_path / "report"
+    reconcile_entities(str(db_path), str(report_dir), apply=False)
+    summary = json.loads((report_dir / "summary.json").read_text(encoding="utf-8"))
+    audit = json.loads((report_dir / "audit.jsonl").read_text(encoding="utf-8"))
+    assert summary["candidate_entities"] == 0
+    assert summary["no_candidate_entities"] == 1
+    assert audit["status"] == "NO_CANDIDATE_ENTITIES"
+
+
 
 def test_full_rollback_on_error(temp_db, tmp_path, monkeypatch):
     import src.core.reconcile_document_entities as mod

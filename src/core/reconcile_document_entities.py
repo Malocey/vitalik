@@ -126,7 +126,11 @@ def reconcile_entities(db_path: str, report_dir: Optional[str] = None, apply: bo
     db = sqlite3.connect(db_path_obj)
     db.row_factory = sqlite3.Row
 
-    summary_data = {"processed": 0, "conflicts": 0, "updated": 0, "unchanged": 0}
+    summary_data = {
+        "processed": 0, "conflicts": 0, "updated": 0, "unchanged": 0,
+        "no_candidate_entities": 0, "candidate_entities": 0,
+        "candidate_aliases": 0,
+    }
     conflicts = []
     audit_log = []
 
@@ -138,6 +142,8 @@ def reconcile_entities(db_path: str, report_dir: Optional[str] = None, apply: bo
 
         cursor.execute("SELECT * FROM contact_aliases")
         aliases = [dict(row) for row in cursor.fetchall()]
+        summary_data["candidate_entities"] = len(entities)
+        summary_data["candidate_aliases"] = len(aliases)
 
         cursor.execute("SELECT * FROM belege")
         belege = [dict(row) for row in cursor.fetchall()]
@@ -235,6 +241,10 @@ def reconcile_entities(db_path: str, report_dir: Optional[str] = None, apply: bo
             status = "UNCHANGED"
             proposed_entity = None
 
+            if not entities:
+                status = "NO_CANDIDATE_ENTITIES"
+                summary_data["no_candidate_entities"] += 1
+
             if file_unreadable:
                 status = "SOURCE_UNREADABLE"
 
@@ -248,7 +258,7 @@ def reconcile_entities(db_path: str, report_dir: Optional[str] = None, apply: bo
                     "lieferant": supplier_name,
                     "raw_text_path": beleg.get("raw_text_path", "")
                 })
-            elif not file_unreadable:
+            elif not file_unreadable and entities:
                 if len(found_entities) == 1:
                     proposed_entity = list(found_entities)[0]
                     if proposed_entity != current_entity_id:
