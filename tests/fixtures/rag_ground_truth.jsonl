@@ -33,3 +33,4 @@
 {"query_id": "accounting_03", "query": "Porto", "query_type": "accounting", "expected_entity_id": null, "expected_doc_ids": ["VG-0503"], "allowed_categories": ["beleg"], "expected_sources": ["fts5", "ocr_fallback"]}
 {"query_id": "accounting_04", "query": "Reisekosten", "query_type": "accounting", "expected_entity_id": null, "expected_doc_ids": ["VG-0504"], "allowed_categories": ["beleg"], "expected_sources": ["fts5"]}
 {"query_id": "accounting_05", "query": "Bewirtungskosten", "query_type": "accounting", "expected_entity_id": null, "expected_doc_ids": ["VG-0505"], "allowed_categories": ["beleg"], "expected_sources": ["fts5"]}
+{"query_id": "ocr_only_01", "query": "Zusatzklausel", "query_type": "entity", "expected_entity_id": null, "expected_doc_ids": ["VG-OCR01"], "allowed_categories": ["beleg"], "expected_sources": ["ocr_fallback"]}

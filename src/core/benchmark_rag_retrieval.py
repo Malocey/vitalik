@@ -3,13 +3,16 @@ import json
 import csv
 import sys
 import logging
+import tempfile
+import hashlib
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from collections import defaultdict
 from dataclasses import dataclass
 import time
 
-from src.core.rag_engine import rag_engine
+from src.core.rag_engine import rag_engine as global_rag_engine, RAGEngine
+from src.core.local_llm_client import LocalLLMClient
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger("RAGBenchmark")
@@ -89,7 +92,7 @@ def calculate_metrics(results: List[Dict[str, Any]], thresholds: Dict[str, float
     exact_supplier_hub_first = 0
 
     for res in results:
-        gt = res["ground_truth"]
+        gt: GroundTruthItem = res["ground_truth"]
         retrieved = res["retrieved"]
         q_type = gt.query_type
 
@@ -108,6 +111,13 @@ def calculate_metrics(results: List[Dict[str, Any]], thresholds: Dict[str, float
         for i, doc in enumerate(retrieved[:5]):
             doc_id = doc.get("doc_id")
             source = doc.get("source")
+            category = doc.get("category")
+
+            if category not in gt.allowed_categories and category and gt.allowed_categories:
+                logger.debug(f"Retrieved doc {doc_id} has unallowed category {category}")
+            if source not in gt.expected_sources and source and gt.expected_sources:
+                logger.debug(f"Retrieved doc {doc_id} has unexpected source {source}")
+
             metrics["sources"][source] += 1
 
             if doc_id in seen_docs:
@@ -119,7 +129,7 @@ def calculate_metrics(results: List[Dict[str, Any]], thresholds: Dict[str, float
             elif expected_docs and doc_id in expected_docs:
                 hit_positions.append(i + 1)
 
-            if expected_entity and doc.get("category", "").startswith("wiki_") and first_entity_hit is None:
+            if expected_entity and str(category).startswith("wiki_") and first_entity_hit is None:
                 first_entity_hit = doc_id
 
         if has_duplicate:
@@ -249,71 +259,120 @@ def check_thresholds(metrics: Dict[str, Any], thresholds: Dict[str, float]) -> b
 
     return passed
 
-def run_benchmark(mode: str, ground_truth_path: Path, output_dir: Path, thresholds: Dict[str, float]):
-    ground_truth = load_ground_truth(ground_truth_path)
+def run_benchmark(mode: str, ground_truth_path: Path, output_dir: Path, thresholds: Dict[str, float], engine: Optional[RAGEngine] = None) -> bool:
+    try:
+        ground_truth = load_ground_truth(ground_truth_path)
+    except Exception as e:
+        logger.error(f"Failed to load ground truth from {ground_truth_path}: {e}")
+        return False
+
     logger.info(f"Loaded {len(ground_truth)} queries from {ground_truth_path}")
 
+    valid_query_types = {"entity", "invoice_number", "date_range", "article_category", "amount", "accounting"}
+
     if mode == "structural":
-        logger.info("Running in structural mode. Validating schema and metrics only.")
-        dummy_results = []
+        logger.info("Running in structural mode. Validating schema and consistency.")
+        errors = 0
         for gt in ground_truth:
-            dummy_results.append({
-                "ground_truth": gt,
-                "retrieved": [{"doc_id": gt.expected_entity_id or (gt.expected_doc_ids[0] if gt.expected_doc_ids else "dummy"), "source": "fts5", "category": gt.allowed_categories[0] if gt.allowed_categories else "beleg"}]
-            })
-        metrics = calculate_metrics(dummy_results, thresholds)
-        export_results(dummy_results, metrics, output_dir)
-        return
+            if gt.query_type not in valid_query_types:
+                logger.error(f"Invalid query_type '{gt.query_type}' for query '{gt.query_id}'")
+                errors += 1
+            if not gt.query_id or not gt.query:
+                logger.error(f"Missing required fields for query '{gt.query_id}'")
+                errors += 1
+
+        if errors > 0:
+            logger.error(f"Structural validation failed with {errors} errors.")
+            return False
+
+        logger.info("Structural validation passed.")
+        return True
 
     elif mode == "fixture":
         logger.info("Running in fixture mode. Using offline engine with mock data.")
 
         # Mock embedding function for deterministic offline execution
         def mock_generate_embedding(text: str) -> List[float]:
-            return [0.1] * 384
+            # Deterministic hash to vector mapping
+            h = hashlib.md5(text.encode()).digest()
+            return [(b / 255.0) for b in h] + [0.0] * (384 - 16)
 
-        rag_engine.llm_client.generate_embedding = mock_generate_embedding
+        mock_llm_client = LocalLLMClient()
+        mock_llm_client.generate_embedding = mock_generate_embedding
 
-        # Setup mock db
-        output_dir.mkdir(parents=True, exist_ok=True)
-        rag_engine.db_path = output_dir / "mock_rag.db"
-        rag_engine.index_file = output_dir / "mock_index.json"
-        rag_engine._init_sqlite_db()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_dir_path = Path(temp_dir)
+            test_engine = RAGEngine(llm_client=mock_llm_client)
+            test_engine.db_path = temp_dir_path / "mock_rag.db"
+            test_engine.index_file = temp_dir_path / "mock_index.json"
+            test_engine._init_sqlite_db()
 
-        # Populate mock db
-        for gt in ground_truth:
-            if gt.expected_entity_id:
-                rag_engine.documents.append({
-                    "doc_id": gt.expected_entity_id,
-                    "title": gt.query,
-                    "content": gt.query,
-                    "category": "wiki_lieferant",
-                    "source": "wiki",
-                    "embedding": mock_generate_embedding(gt.query)
+            # Populate mock db
+            for gt in ground_truth:
+                if gt.expected_entity_id:
+                    test_engine.documents.append({
+                        "doc_id": gt.expected_entity_id,
+                        "title": gt.query,
+                        "content": gt.query,
+                        "category": "wiki_lieferant",
+                        "source": "wiki",
+                        "embedding": mock_generate_embedding(gt.query)
+                    })
+                for doc_id in gt.expected_doc_ids:
+                    if "ocr_fallback" in gt.expected_sources and len(gt.expected_sources) == 1:
+                        test_engine.index_beleg({"raw_text": gt.query, "lieferant": "", "datum": "", "brutto": ""}, doc_id)
+                        # We force it out of FTS5 by blanking summary
+                        import sqlite3
+                        with sqlite3.connect(test_engine.db_path) as conn:
+                            conn.execute("DELETE FROM belege_fts WHERE beleg_id = ?", (doc_id,))
+                            conn.commit()
+                    else:
+                        test_engine.index_beleg({"raw_text": gt.query, "lieferant": gt.query}, doc_id)
+
+            engine_to_use = test_engine
+
+            results = []
+            for gt in ground_truth:
+                retrieved = engine_to_use.search(gt.query, top_k=5, use_fts=True)
+                results.append({
+                    "ground_truth": gt,
+                    "retrieved": retrieved
                 })
-            for doc_id in gt.expected_doc_ids:
-                rag_engine.index_beleg({"raw_text": gt.query, "lieferant": gt.query}, doc_id)
+
+            metrics = calculate_metrics(results, thresholds)
+            export_results(results, metrics, output_dir)
+
+            passed = check_thresholds(metrics, thresholds)
+            if not passed:
+                logger.error("One or more thresholds failed.")
+                return False
+
+            logger.info("Benchmark completed successfully.")
+            return True
 
     elif mode == "live":
         logger.info("Running in live mode with real RAGEngine.")
-        pass
+        engine_to_use = engine or global_rag_engine
+        results = []
+        for gt in ground_truth:
+            retrieved = engine_to_use.search(gt.query, top_k=5, use_fts=True)
+            results.append({
+                "ground_truth": gt,
+                "retrieved": retrieved
+            })
 
-    results = []
-    for gt in ground_truth:
-        retrieved = rag_engine.search(gt.query, top_k=5, use_fts=True)
-        results.append({
-            "ground_truth": gt,
-            "retrieved": retrieved
-        })
+        metrics = calculate_metrics(results, thresholds)
+        export_results(results, metrics, output_dir)
 
-    metrics = calculate_metrics(results, thresholds)
-    export_results(results, metrics, output_dir)
+        passed = check_thresholds(metrics, thresholds)
+        if not passed:
+            logger.error("One or more thresholds failed.")
+            return False
 
-    if not check_thresholds(metrics, thresholds):
-        logger.error("One or more thresholds failed.")
-        sys.exit(1)
+        logger.info("Benchmark completed successfully.")
+        return True
 
-    logger.info("Benchmark completed successfully.")
+    return False
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="RAG Retrieval Benchmark")
@@ -340,4 +399,6 @@ if __name__ == "__main__":
         "supplier_hub_first_rate": args.supplier_hub_first_rate,
     }
 
-    run_benchmark(args.mode, Path(args.ground_truth), Path(args.output), thresholds)
+    success = run_benchmark(args.mode, Path(args.ground_truth), Path(args.output), thresholds)
+    if not success:
+        sys.exit(1)
