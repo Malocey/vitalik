@@ -41,6 +41,46 @@ class ValidationShield:
             doc_data["validation_reason"] = reason
             return False, reason, doc_data
 
+        belegtyp = doc_data.get("belegtyp", "")
+
+        if belegtyp in {"Systembenachrichtigung / Login", "Systembenachrichtigung"}:
+            reason = "Systembenachrichtigung / Login-Link (Keine Buchhaltung erforderlich)."
+            doc_data["validation_status"] = "SYSTEM_INFO"
+            doc_data["validation_reason"] = reason
+            return False, reason, doc_data
+
+        if belegtyp in {"Vertrags- & AGB-Mitteilung", "Vertrag"}:
+            reason = "Vertrags- / AGB-Mitteilung (Informationell erfasst)."
+            doc_data["validation_status"] = "VERTRAGS_INFO"
+            doc_data["validation_reason"] = reason
+            return False, reason, doc_data
+
+        if belegtyp in {"Werbung / Newsletter"}:
+            reason = "Werbung / Newsletter (Gefiltert)."
+            doc_data["validation_status"] = "SPAM_FILTERED"
+            doc_data["validation_reason"] = reason
+            return False, reason, doc_data
+
+        if belegtyp in {"Quittung / Zahlungsbestaetigung", "Quittung"}:
+            doc_data["skr03_konto"] = "4900"
+            doc_data["skr04_konto"] = "6300"
+            doc_data["validation_status"] = "PASSED"
+            doc_data["validation_reason"] = "Digitale Quittung / Beleg erfolgreich validiert."
+            return True, "Digitale Quittung / Beleg erfolgreich validiert.", doc_data
+
+        if belegtyp in {"Preiserhöhungs-Mitteilung"}:
+            doc_data["skr03_konto"] = "3400"
+            doc_data["skr04_konto"] = "5400"
+            doc_data["validation_status"] = "PASSED"
+            doc_data["validation_reason"] = "Preiserhöhungs-Mitteilung erfasst."
+            return True, "Preiserhöhungs-Mitteilung erfasst.", doc_data
+
+        if belegtyp in {"E-Mail Korrespondenz", "E-Mail", "Sonstiges"} and float(doc_data.get("brutto", 0.0) or 0.0) == 0.0:
+            reason = "Informationelle E-Mail ohne Rechnungsbetrag erfasst."
+            doc_data["validation_status"] = "EMAIL_INFO"
+            doc_data["validation_reason"] = reason
+            return False, reason, doc_data
+
         if float(doc_data.get("ocr_quality_score", 1.0) or 0.0) < 0.70:
             reason = "OCR-Qualität unter 70 %; manuelle Prüfung erforderlich."
             doc_data["validation_status"] = "MANUAL_REVIEW_NEEDED"

@@ -33,6 +33,7 @@ from src.wiki.wiki_engine import karpathy_wiki, wiki_engine
 from src.core.persona_style import persona_engine
 from src.core.local_llm_client import default_llm_client
 from pipeline import archive_pipeline
+from src.parser.document_type_classifier import document_type_classifier
 from src.parser.pdf_engine import pdf_engine
 from src.parser.analyzer import document_analyzer
 from src.core.validation_shield import validation_shield
@@ -325,27 +326,44 @@ async def post_scan_directory(request: ScanRequest):
                     })
                 continue
             pages_info = batch_pages_info.get(str(file_path)) or multi_format_engine.extract_document(file_path)
+            email_text = pages_info[0]["full_text"] if pages_info else ""
+            
+            dt_res = document_type_classifier.classify(email_text)
+            dt_type = dt_res.get("document_type")
+
             extracted_docs = document_analyzer.analyze_page_stack(pages_info)
             
             for doc in extracted_docs:
-                passed, reason, enriched_doc = validation_shield.validate_document(doc)
-                
-                sort_result = multi_format_engine.persist_non_pdf_document(file_path, enriched_doc)
-                saved_path = sort_result["saved_path"]
-                
+                if dt_type and dt_type != "Sonstiges":
+                    doc["belegtyp"] = dt_type
+
                 if file_path.suffix.lower() in [".eml", ".msg"]:
-                    email_text = pages_info[0]["full_text"] if pages_info else ""
                     classification = email_decision_engine.classify_email({
                         "subject": file_path.stem,
                         "from": file_path.name,
                         "body": email_text
                     })
+                    if classification.get("supplier_name"):
+                        doc["lieferant"] = classification["supplier_name"]
+
+                    if dt_type and dt_type != "Sonstiges":
+                        doc["belegtyp"] = dt_type
+                    elif classification.get("intent") == "PREIS_ERHOEHUNG":
+                        doc["belegtyp"] = "Preiserhöhungs-Mitteilung"
+                        doc["skr03_konto"] = "3400"
+                    else:
+                        doc["belegtyp"] = "E-Mail Korrespondenz"
+
                     draft = email_draft_generator.generate_draft({
                         "subject": file_path.stem,
                         "from": file_path.name,
                         "body": email_text
                     }, classification)
                     logger.info(f"[E-Mail-Draft] KI-Entwurf '{draft['draft_id']}' für '{file_path.name}' generiert.")
+
+                passed, reason, enriched_doc = validation_shield.validate_document(doc)
+                sort_result = multi_format_engine.persist_non_pdf_document(file_path, enriched_doc)
+                saved_path = sort_result["saved_path"]
 
                 if passed:
                     mock_sevdesk.post_voucher(enriched_doc)

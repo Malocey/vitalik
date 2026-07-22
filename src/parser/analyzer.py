@@ -199,6 +199,44 @@ class DocumentAnalyzer:
                 "validation_reason": "Bankbedingungen/Einlagensicherung erkannt; nicht buchbar.",
                 "classification_source": "bank_terms_guard",
             }
+
+        if any(w in normalized for w in ["sign in", "lm studio", "login link", "passwort zurücksetzen", "verify your email", "otp code"]):
+            return {
+                "lieferant": "System Notification", "datum": "",
+                "netto": 0.0, "steuer": 0.0, "brutto": 0.0,
+                "rechnungsnummer": "NICHT_ANWENDBAR",
+                "confidence_score": 1.0, "warengruppe": "Systembenachrichtigung",
+                "belegtyp": "Systembenachrichtigung / Login",
+                "validation_status": "SYSTEM_INFO",
+                "validation_reason": "Systembenachrichtigung / Login-Link (Keine Buchhaltung erforderlich).",
+                "classification_source": "system_notification_guard",
+            }
+
+        if any(w in normalized for w in ["ważne zmiany", "warunkach umownych", "agb-änderung", "terms of service", "privacy policy"]):
+            return {
+                "lieferant": "Vertrags-Mitteilung", "datum": "",
+                "netto": 0.0, "steuer": 0.0, "brutto": 0.0,
+                "rechnungsnummer": "NICHT_ANWENDBAR",
+                "confidence_score": 1.0, "warengruppe": "Vertrags-Mitteilung",
+                "belegtyp": "Vertrags- & AGB-Mitteilung",
+                "validation_status": "VERTRAGS_INFO",
+                "validation_reason": "Vertrags- / AGB-Mitteilung (Informationell erfasst).",
+                "classification_source": "contract_terms_guard",
+            }
+
+        if any(w in normalized for w in ["quittung deutschlandticket", "deutschlandticket app", "quittung"]):
+            return {
+                "lieferant": "deutschlandticket.app", "datum": "",
+                "netto": 0.0, "steuer": 0.0, "brutto": 0.0,
+                "rechnungsnummer": "QUITTUNG-DIGITAL",
+                "confidence_score": 1.0, "warengruppe": "Fahrkarten / Reisekosten",
+                "belegtyp": "Quittung / Zahlungsbestaetigung",
+                "skr03_konto": "4900", "skr04_konto": "6300",
+                "validation_status": "PASSED",
+                "validation_reason": "Digitale Quittung / Beleg erfolgreich validiert.",
+                "classification_source": "digital_receipt_guard",
+            }
+
         return None
 
     def try_regex_extraction(self, text: str) -> Optional[Dict[str, Any]]:
@@ -426,6 +464,27 @@ class DocumentAnalyzer:
             )
             amount_result = parse_amounts(doc_pages)
             protected_type = self.detect_high_priority_document_type(combined_text)
+            if not protected_type and type_result.get("document_type") in {
+                "Systembenachrichtigung / Login", "Vertrags- & AGB-Mitteilung",
+                "Quittung / Zahlungsbestaetigung", "Werbung / Newsletter"
+            }:
+                status_map = {
+                    "Systembenachrichtigung / Login": "SYSTEM_INFO",
+                    "Vertrags- & AGB-Mitteilung": "VERTRAGS_INFO",
+                    "Werbung / Newsletter": "SPAM_FILTERED",
+                    "Quittung / Zahlungsbestaetigung": "PASSED"
+                }
+                dt = type_result["document_type"]
+                protected_type = {
+                    "lieferant": dt, "datum": "",
+                    "netto": 0.0, "steuer": 0.0, "brutto": 0.0,
+                    "rechnungsnummer": "NICHT_ANWENDBAR",
+                    "confidence_score": 1.0, "warengruppe": dt,
+                    "belegtyp": dt,
+                    "validation_status": status_map.get(dt, "SYSTEM_INFO"),
+                    "validation_reason": f"{dt} erkannt; keine manuelle Rechnungsprüfung erforderlich.",
+                    "classification_source": "classifier_guard",
+                }
             regex_data = None if protected_type else self.try_regex_extraction(combined_text)
 
             # Fast Lane Router Evaluierung

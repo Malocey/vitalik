@@ -42,3 +42,24 @@
 ## [2026-07-22 11:06] UPDATE_PAGE | Seite 'Analyse: Welche Konten nutzen wir für Fleischwaren?' (query_welche_konten_nutzen_wir_für_fleischware.md) erstellt/aktualisiert.
 ## [2026-07-22 11:06] COMPOUND_QUERY | Erkenntnis gespeichert für: 'Welche Konten nutzen wir für Fleischware'
 ## [2026-07-22 11:06] QUERY | RAG-Abfrage: 'Welche Konten nutzen wir für Fleischware' → Antwort im Wiki gespeichert
+## [2026-07-22 11:10] UPDATE_PAGE | Seite 'Analyse: Welche Konten nutzen wir für Fleischwaren?' (query_welche_konten_nutzen_wir_für_fleischware.md) erstellt/aktualisiert.
+## [2026-07-22 11:10] COMPOUND_QUERY | Erkenntnis gespeichert für: 'Welche Konten nutzen wir für Fleischware'
+## [2026-07-22 11:10] QUERY | RAG-Abfrage: 'Welche Konten nutzen wir für Fleischware' → Antwort im Wiki gespeichert
+## [2026-07-22 11:10] UPDATE_ENTITY | Lieferant 'Halina Gorzawski' mit Quelle MF-d5d609b8b59c1a40-1 aktualisiert.
+## [2026-07-22 11:11] UPDATE_ENTITY | Lieferant 'deutschlandticket.app' mit Quelle MF-dc9fdb6dfadd8d3c-1 aktualisiert.
+## [2026-07-22 11:11] UPDATE_ENTITY | Lieferant 'Metro Grosshandel AG' mit Quelle MF-b0c3f119c8a3a01c-1 aktualisiert.
+## [2026-07-22 11:11] UPDATE_ENTITY | Lieferant 'LM Studio' mit Quelle MF-56b1867fa9055f73-1 aktualisiert.
+## [2026-07-22 11:11] UPDATE_ENTITY | Lieferant 'Bybit-EU' mit Quelle MF-62a1296b854839fc-1 aktualisiert.
+## [2026-07-22 11:11] DIRECTORY_SCAN | Ordner 'testdata' gescannt. 5 Beleg(e) verarbeitet.
+## [2026-07-22 11:16] UPDATE_ENTITY | Lieferant 'Halina Gorzawski' mit Quelle MF-d5d609b8b59c1a40-1 aktualisiert.
+## [2026-07-22 11:16] UPDATE_ENTITY | Lieferant 'Halina Gorzawski' mit Quelle MF-d5d609b8b59c1a40-1 aktualisiert.
+## [2026-07-22 11:17] UPDATE_ENTITY | Lieferant 'Deutschlandticket' mit Quelle MF-dc9fdb6dfadd8d3c-1 aktualisiert.
+## [2026-07-22 11:17] UPDATE_ENTITY | Lieferant 'Halina Gorzawski' mit Quelle MF-d5d609b8b59c1a40-1 aktualisiert.
+## [2026-07-22 11:17] UPDATE_ENTITY | Lieferant 'Deutschlandticket' mit Quelle MF-dc9fdb6dfadd8d3c-1 aktualisiert.
+## [2026-07-22 11:17] UPDATE_ENTITY | Lieferant 'Halina Gorzawski' mit Quelle MF-d5d609b8b59c1a40-1 aktualisiert.
+t.
+## [2026-07-22 11:17] UPDATE_ENTITY | Lieferant 'Deutschlandticket' mit Quelle MF-dc9fdb6dfadd8d3c-1 aktualisiert.
+## [2026-07-22 11:17] UPDATE_ENTITY | Lieferant 'Deutschlandticket' mit Quelle MF-dc9fdb6dfadd8d3c-1 aktualisiert.
+## [2026-07-22 11:18] UPDATE_ENTITY | Lieferant 'Metro Grosshandel AG' mit Quelle MF-b0c3f119c8a3a01c-1 aktualisiert.
+## [2026-07-22 11:18] UPDATE_ENTITY | Lieferant 'Halina Gorzawski' mit Quelle MF-d5d609b8b59c1a40-1 aktualisiert.
+## [2026-07-22 11:18] UPDATE_ENTITY | Lieferant 'Deutschlandticket' mit Quelle MF-dc9fdb6dfadd8d3c-1 aktualisiert.

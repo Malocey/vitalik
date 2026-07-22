@@ -870,12 +870,21 @@
                     tableBody.innerHTML = '';
                     data.results.forEach(item => {
                         const tr = document.createElement('tr');
+                        let statusColor = '#ef4444';
+                        let statusText = item.validation_status;
+                        if (item.validation_status === 'PASSED') { statusColor = '#10b981'; }
+                        else if (item.validation_status === 'SYSTEM_INFO') { statusColor = '#3b82f6'; statusText = 'SYSTEM_INFO (LOGIN)'; }
+                        else if (item.validation_status === 'VERTRAGS_INFO') { statusColor = '#a855f7'; statusText = 'VERTRAGS_INFO (AGB)'; }
+                        else if (item.validation_status === 'EMAIL_INFO') { statusColor = '#38bdf8'; statusText = 'EMAIL_INFO'; }
+                        else if (item.validation_status === 'SPAM_FILTERED') { statusColor = '#64748b'; statusText = 'SPAM_GEFILTERT'; }
+                        else if (item.validation_status === 'CLASSIFIED_NON_BOOKABLE') { statusColor = '#f59e0b'; }
+
                         tr.innerHTML = `
                             <td>${esc(item.filename)}</td>
                             <td>${esc(item.lieferant)}</td>
                             <td>${Number(item.brutto || 0).toFixed(2)} €</td>
                             <td>${esc(item.skr03)}</td>
-                            <td style="color: ${item.validation_status === 'PASSED' ? '#10b981' : '#ef4444'}">${esc(item.validation_status)}</td>
+                            <td><span class="status-pill" style="background: ${statusColor}22; color: ${statusColor}; border: 1px solid ${statusColor}66;">${esc(statusText)}</span></td>
                         `;
                         tableBody.appendChild(tr);
                     });

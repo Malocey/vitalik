@@ -47,6 +47,10 @@ class DocumentTypeClassifier:
     TYPE_VERTRAG = "Vertrag"
     TYPE_VERSICHERUNG = "Versicherung"
     TYPE_STEUERBESCHEID = "Steuerbescheid"
+    TYPE_SYSTEM_NOTIFICATION = "Systembenachrichtigung / Login"
+    TYPE_VERTRAGS_MITTEILUNG = "Vertrags- & AGB-Mitteilung"
+    TYPE_QUITTUNG_BELEG = "Quittung / Zahlungsbestaetigung"
+    TYPE_SPAM_WERBUNG = "Werbung / Newsletter"
     TYPE_SONSTIGES = "Sonstiges"
     TYPE_UNLESBAR = "Unlesbar"
 
@@ -244,6 +248,66 @@ class DocumentTypeClassifier:
                 },
                 "negative": {}
             },
+            self.TYPE_SYSTEM_NOTIFICATION: {
+                "positive": {
+                    r"\bsign in\b": self.STRONG_WEIGHT,
+                    r"\blogin\b": self.STRONG_WEIGHT,
+                    r"\bregistrierung\b": self.STRONG_WEIGHT,
+                    r"\banmeldung\b": self.STRONG_WEIGHT,
+                    r"\bpasswort zur[uü]cksetzen\b": self.STRONG_WEIGHT,
+                    r"\bverify.*email\b": self.STRONG_WEIGHT,
+                    r"\botp\b": self.STRONG_WEIGHT,
+                    r"\beinmal-passwort\b": self.STRONG_WEIGHT,
+                    r"\blm studio\b": self.STRONG_WEIGHT,
+                    r"\bauthentication\b": self.STRONG_WEIGHT,
+                    r"\bzweistufige authentifizierung\b": self.STRONG_WEIGHT,
+                },
+                "negative": {
+                    r"\brechnungsnummer\b": self.STRONG_WEIGHT,
+                    r"\bgesamtbetrag\b": self.STRONG_WEIGHT,
+                }
+            },
+            self.TYPE_VERTRAGS_MITTEILUNG: {
+                "positive": {
+                    r"\bważne zmiany\b": self.STRONG_WEIGHT,
+                    r"\bwarunkach umownych\b": self.STRONG_WEIGHT,
+                    r"\bagb-?änderung\b": self.STRONG_WEIGHT,
+                    r"\bterms of service\b": self.STRONG_WEIGHT,
+                    r"\bdatenschutzbestimmungen\b": self.STRONG_WEIGHT,
+                    r"\bprivacy policy\b": self.STRONG_WEIGHT,
+                    r"\bnutzungsbedingungen\b": self.STRONG_WEIGHT,
+                    r"\bvertragsänderung\b": self.STRONG_WEIGHT,
+                },
+                "negative": {
+                    r"\brechnungsnummer\b": self.STRONG_WEIGHT,
+                }
+            },
+            self.TYPE_QUITTUNG_BELEG: {
+                "positive": {
+                    r"\bquittung\b": self.STRONG_WEIGHT,
+                    r"\bdeutschlandticket\b": self.STRONG_WEIGHT,
+                    r"\bfahrkarte\b": self.STRONG_WEIGHT,
+                    r"\bzahlungsbestätigung\b": self.STRONG_WEIGHT,
+                    r"\bzahlungsbeleg\b": self.STRONG_WEIGHT,
+                    r"\bkaufbestätigung\b": self.STRONG_WEIGHT,
+                    r"\bbon-?nr\.?\b": self.STRONG_WEIGHT,
+                },
+                "negative": {}
+            },
+            self.TYPE_SPAM_WERBUNG: {
+                "positive": {
+                    r"\bnewsletter\b": self.STRONG_WEIGHT,
+                    r"\babmelden\b": self.STRONG_WEIGHT,
+                    r"\bunsubscribe\b": self.STRONG_WEIGHT,
+                    r"\brabatt\b": self.MEDIUM_WEIGHT,
+                    r"\bsonderangebot\b": self.STRONG_WEIGHT,
+                    r"\bwerbung\b": self.STRONG_WEIGHT,
+                    r"\bexklusiver deal\b": self.STRONG_WEIGHT,
+                },
+                "negative": {
+                    r"\brechnungsnummer\b": self.STRONG_WEIGHT,
+                }
+            },
             self.TYPE_SONSTIGES: {
                 "positive": {},
                 "negative": {}
@@ -418,3 +482,6 @@ class DocumentTypeClassifier:
             conflicting_types=conflicting_types,
             status=status
         ).to_dict()
+
+
+document_type_classifier = DocumentTypeClassifier()
