@@ -1,6 +1,9 @@
 {
   "groups": {
-    "group:vitali-admin": ["gdamien00@gmail.com"]
+    "group:vitali-admin": [
+      "vitaligebel@googlemail.com",
+      "gdamien00@gmail.com"
+    ]
   },
   "tagOwners": {
     "tag:document-server": ["group:vitali-admin"]

@@ -25,7 +25,7 @@ werden nicht unmaskiert an den Browser ausgegeben.
 ## Automatische macOS-Installation
 
 ```bash
-REMOTE_ADMIN_USERS="gdamien00@gmail.com" bash scripts/install_control_center_macos.sh
+REMOTE_ADMIN_USERS="vitaligebel@googlemail.com,gdamien00@gmail.com" bash scripts/install_control_center_macos.sh
 ```
 
 Das Skript installiert Python-Abhängigkeiten, erzeugt einen LaunchAgent, erkennt
