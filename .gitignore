@@ -24,6 +24,7 @@ data/*.db
 data/*.db-*
 data/logs/
 data/admin_state.json
+data/backups/
 data/ocr_cache/
 data/raw_sources/
 data/reports/
@@ -36,5 +37,8 @@ data/checkpoint.json
 data/wiki/beleg_*.md
 !data/wiki/beleg_pipeline_anleitung.md
 data/wiki/entities/
+data/wiki/archive/
+data/wiki/review/
+data/wiki/sevdesk_*.md
 data/wiki/query_*.md
 data/document_jobs.db*

@@ -9,6 +9,7 @@ Implementiert das 'LLM Wiki' Konzept von Andrej Karpathy:
 """
 
 import json
+import hashlib
 import os
 import re
 from datetime import datetime
@@ -22,8 +23,9 @@ RAW_SOURCES_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class KarpathyLLMWikiEngine:
-    def __init__(self, wiki_dir: Path = WIKI_DIR):
+    def __init__(self, wiki_dir: Path = WIKI_DIR, rag=None):
         self.wiki_dir = wiki_dir
+        self.rag = rag or rag_engine
         self.wiki_dir.mkdir(parents=True, exist_ok=True)
         self.index_file = self.wiki_dir / "index.md"
         self.log_file = self.wiki_dir / "log.md"
@@ -39,13 +41,9 @@ class KarpathyLLMWikiEngine:
         existing = self.log_file.read_text(encoding="utf-8") if self.log_file.exists() else "# 📜 VG Delikatessen LLM-Wiki Log\n\n"
         os.makedirs(os.path.dirname(self.log_file), exist_ok=True)
         self.log_file.write_text(existing + log_entry, encoding="utf-8")
-        rag_engine.index_document(
-            doc_id="wiki_log",
-            title="VG Delikatessen LLM-Wiki Log",
-            content=existing + log_entry,
-            source=str(self.log_file),
-            category="wiki_system",
-        )
+        # Das chronologische Betriebslog ist Navigation, kein Fachwissen. Würde
+        # es bei jedem Ereignis vollständig indiziert, verdrängen Wiederholungen
+        # die eigentlichen Lieferanten- und Sachthemen aus den Treffern.
 
     def create_or_update_page(
         self,
@@ -73,7 +71,7 @@ class KarpathyLLMWikiEngine:
         page_path.write_text(full_markdown, encoding="utf-8")
 
         # Ins RAG-System einspeisen
-        rag_engine.index_document(
+        self.rag.index_document(
             doc_id=f"wiki_{slug}",
             title=title,
             content=full_markdown,
@@ -90,7 +88,11 @@ class KarpathyLLMWikiEngine:
         doc_data: Dict[str, Any],
         beleg_id: str,
     ) -> Path:
-        """Schreibt einen verarbeiteten Beleg als persistente Markdown-Wiki-Seite."""
+        """Verdichtet einen Beleg in eine kanonische Entitätsseite.
+
+        Der Einzelbeleg bleibt vollständig in SQLite und unter raw_sources. Im
+        aktiven Wiki entsteht dagegen genau eine Seite je Lieferant/Kunde.
+        """
         safe_id = re.sub(r"[^a-zA-Z0-9_-]+", "_", str(beleg_id)).strip("_")
         if not safe_id:
             raise ValueError("Für die Wiki-Indizierung ist eine gültige Beleg-ID erforderlich.")
@@ -139,28 +141,114 @@ class KarpathyLLMWikiEngine:
                 f"{item.get('artikelnummer')} ({item.get('name')})" for item in article_matches
             ) + "\n"
 
-        content = (
-            f"## Belegdaten\n\n"
-            f"- **Beleg-ID:** {beleg_id}\n"
-            f"- **Lieferant:** {lieferant}\n"
-            f"- **Datum:** {datum}\n"
-            f"- **Bruttobetrag:** {brutto} EUR\n"
-            f"- **Nettobetrag:** {doc_data.get('netto', '')} EUR\n"
-            f"- **Umsatzsteuer:** {doc_data.get('steuer', '')} EUR\n"
-            f"- **Rechnungsnummer:** {doc_data.get('rechnungsnummer', '')}\n"
-            f"- **Warengruppe:** {doc_data.get('warengruppe', '')}\n"
-            f"- **SKR03-Konto:** {doc_data.get('skr03_konto', '')}\n"
-            f"- **Validierungsstatus:** {doc_data.get('validation_status', '')}\n\n"
-            f"{assignment_lines}{link_line}\n## Zusammenfassung\n\n{summary}\n\n"
-            f"## Quelldaten\n\nVollständiger OCR-Text: `{raw_path}`"
-        )
-        page_path = self.create_or_update_page(
-            slug=f"beleg_{safe_id}",
-            title=f"Beleg {beleg_id} – {lieferant}",
-            content=content,
-            category="beleg",
-        )
+        page_path = self.update_contact_page(doc_data, beleg_id)
         doc_data["wiki_path"] = str(page_path)
+        return page_path
+
+    @staticmethod
+    def _entity_slug(name: str, entity_id: str = "") -> str:
+        normalized = re.sub(r"[^a-z0-9]+", "-", name.casefold()).strip("-")
+        if normalized:
+            return normalized[:80]
+        digest = hashlib.sha256((entity_id or name).encode("utf-8")).hexdigest()[:12]
+        return f"unbekannt-{digest}"
+
+    def update_contact_page(
+        self, doc_data: Dict[str, Any], beleg_id: str, synchronize: bool = True
+    ) -> Path:
+        """Schreibt eine kompakte, idempotente Lieferanten-Hubseite."""
+        name = str(doc_data.get("lieferant") or "Unbekannter Lieferant").strip()
+        entity_id = str(doc_data.get("contact_entity_id") or "").strip()
+        normalized_name = re.sub(r"[^a-z0-9]+", "", name.casefold())
+        unresolved = normalized_name in {
+            "", "unknown", "unbekannt", "unbekannterlieferant", "bank",
+            "dublittemd5", "fehler",
+        }
+        if unresolved:
+            name, entity_id, slug = "Ungeklärte Belege", "review_unresolved", "unresolved-documents"
+            page_path = self.wiki_dir / "review" / f"{slug}.md"
+            entity_type, category = "review_queue", "prüfung"
+        else:
+            slug = self._entity_slug(name, entity_id)
+            page_path = self.wiki_dir / "entities" / "suppliers" / f"{slug}.md"
+            entity_type, category = "supplier", "lieferant"
+        page_path.parent.mkdir(parents=True, exist_ok=True)
+
+        sources: Dict[str, Dict[str, str]] = {}
+        existing_categories = set()
+        existing_accounts = set()
+        if page_path.exists():
+            existing_text = page_path.read_text(encoding="utf-8")
+            for label in re.findall(r"\[\[article_category_[^|\]]+\|([^\]]+)\]\]", existing_text):
+                if label.casefold() not in {"rechnung", "beleg", "dokument", "unbekannt"}:
+                    existing_categories.add(label)
+            account_match = re.search(r"^skr03_accounts:\s*(\[.*\])$", existing_text, re.MULTILINE)
+            if account_match:
+                try:
+                    existing_accounts.update(json.loads(account_match.group(1)))
+                except json.JSONDecodeError:
+                    pass
+            for line in existing_text.splitlines():
+                match = re.match(r"- `([^`]+)` \| ([^|]*) \| ([^|]*) \| (.*)", line)
+                if match:
+                    sources[match.group(1)] = {
+                        "datum": match.group(2).strip(), "betrag": match.group(3).strip(),
+                        "link": match.group(4).strip(),
+                    }
+        link = str(doc_data.get("beleg_link") or doc_data.get("raw_text_path") or "").strip()
+        rendered_link = f"[Quelle](<{link}>)" if link else "Quelle in SQLite"
+        sources[str(beleg_id)] = {
+            "datum": str(doc_data.get("datum") or "unbekannt"),
+            "betrag": f"{doc_data.get('brutto', '')} EUR",
+            "link": rendered_link,
+        }
+        article_categories = {
+            str(item.get("kategorie") or "").strip()
+            for item in (doc_data.get("sevdesk_artikel_matches") or [])
+            if isinstance(item, dict)
+        }
+        categories = sorted(existing_categories | article_categories | {
+            str(doc_data.get("warengruppe") or "").strip()
+        } - {"", "Unbekannt", "UNKNOWN"})
+        accounts = sorted(existing_accounts | {
+            str(doc_data.get("skr03_konto") or "").strip()
+        } - {""})
+        aliases = sorted({name, *(doc_data.get("lieferant_aliases") or [])})
+        source_lines = "\n".join(
+            f"- `{source_id}` | {item['datum']} | {item['betrag']} | {item['link']}"
+            for source_id, item in sorted(sources.items())
+        )
+        category_links = " ".join(
+            f"[[article_category_{self._entity_slug(category).replace('-', '_')}|{category}]]"
+            for category in categories
+        ) or "Noch nicht sicher bestimmt"
+        content = (
+            "---\n"
+            f"entity_id: \"{entity_id or slug}\"\n"
+            f"entity_type: {entity_type}\n"
+            f"canonical_name: \"{name.replace(chr(34), chr(39))}\"\n"
+            f"aliases: {json.dumps(aliases, ensure_ascii=False)}\n"
+            f"article_categories: {json.dumps(categories, ensure_ascii=False)}\n"
+            f"skr03_accounts: {json.dumps(accounts, ensure_ascii=False)}\n"
+            f"source_count: {len(sources)}\n"
+            f"updated: {datetime.now().strftime('%Y-%m-%d')}\n"
+            "---\n\n"
+            f"# {name}\n*Kategorie: {category}*\n\n"
+            "## Verdichtetes Wissen\n\n"
+            f"- Rollen: {'Manuelle Prüfung' if unresolved else 'Lieferant'}\n- Belegquellen: {len(sources)}\n"
+            f"- Typische Artikelarten/Dokumentarten: {category_links}\n"
+            f"- Verwendete SKR03-Konten: {', '.join(accounts) or 'noch nicht sicher bestimmt'}\n\n"
+            "## Quellenbelege\n\n"
+            f"{source_lines}\n"
+        )
+        page_path.write_text(content, encoding="utf-8")
+        if synchronize:
+            self.rag.index_document(
+                doc_id=f"wiki_{entity_type}_{entity_id or slug}", title=name,
+                content=content, source=str(page_path), category=f"wiki_{category}",
+            )
+            self.rebuild_index_page()
+            self.log_event("UPDATE_ENTITY", f"Lieferant '{name}' mit Quelle {beleg_id} aktualisiert.")
         return page_path
 
     def rebuild_index_page(self):
@@ -168,7 +256,10 @@ class KarpathyLLMWikiEngine:
         Generiert Karpathy's `index.md` neu.
         Katalog aller Seiten mit Links, Einzeilen-Zusammenfassungen und Kategorien.
         """
-        pages = [p for p in self.wiki_dir.glob("*.md") if p.name not in ["index.md", "log.md"]]
+        pages = [
+            p for p in self.wiki_dir.rglob("*.md")
+            if p.name.casefold() not in ["index.md", "log.md"] and "archive" not in p.parts
+        ]
 
         content = "# 📖 VG Delikatessen LLM-Wiki Index\n"
         content += f"*Persistent Compounding Knowledge Base | Stand: {datetime.now().strftime('%Y-%m-%d %H:%M')}*\n\n"
@@ -195,7 +286,8 @@ class KarpathyLLMWikiEngine:
 
             if cat not in categories:
                 categories[cat] = []
-            categories[cat].append({"slug": p.stem, "title": title, "summary": summary, "filename": p.name})
+            relative = p.relative_to(self.wiki_dir).as_posix()
+            categories[cat].append({"slug": p.stem, "title": title, "summary": summary, "filename": relative})
 
         for cat_name, cat_pages in categories.items():
             content += f"### {cat_name.title()}\n"
@@ -205,7 +297,7 @@ class KarpathyLLMWikiEngine:
 
         os.makedirs(os.path.dirname(self.index_file), exist_ok=True)
         self.index_file.write_text(content, encoding="utf-8")
-        rag_engine.index_document(
+        self.rag.index_document(
             doc_id="wiki_index",
             title="VG Delikatessen LLM-Wiki Index",
             content=content,
@@ -310,13 +402,15 @@ class KarpathyLLMWikiEngine:
         nodes = []
         edges = []
         
-        pages = list(self.wiki_dir.rglob("*.md"))
+        pages = [
+            page for page in self.wiki_dir.rglob("*.md")
+            if page.name.casefold() not in {"index.md", "log.md"}
+            and "archive" not in page.relative_to(self.wiki_dir).parts
+        ]
         page_metadata = {}
         
         # 1. Knoten sammeln
         for p in pages:
-            if p.name in ["index.md", "log.md"]:
-                continue
             slug = p.stem
             
             # Auslesen von Titel und Kategorie
@@ -344,8 +438,6 @@ class KarpathyLLMWikiEngine:
             
         # 2. Verknüpfungen sammeln
         for p in pages:
-            if p.name in ["index.md", "log.md"]:
-                continue
             slug = p.stem
             text = p.read_text(encoding="utf-8")
             

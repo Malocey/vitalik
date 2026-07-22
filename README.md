@@ -13,6 +13,8 @@ Extraktion, optionalen LM-Studio-Workern, SQLite-FTS5-RAG, Wiki und CSV-Inventar
 - [Wiederaufnehmbare Dokumentjobs](docs/resumable_document_jobs.md)
 - [Dublettenfreies Kontaktgedächtnis](docs/contact_memory.md)
 - [Privater Fernzugriff und Control Center](docs/REMOTE_ACCESS.md)
+- [Schema des verdichteten LLM-Wikis](docs/WIKI_SCHEMA.md)
+- [Abnahmetest mit 120 Dokumenten](docs/DOCUMENT_ACCEPTANCE_TEST.md)
 
 ## Sichere lokale Prüfungen
 

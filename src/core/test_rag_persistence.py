@@ -48,6 +48,10 @@ def test_rag_persistence() -> None:
             (beleg_id,),
         )
         reopened_connection.execute(
+            "DELETE FROM belege_ocr_fts WHERE beleg_id = ?",
+            (beleg_id,),
+        )
+        reopened_connection.execute(
             "DELETE FROM belege WHERE beleg_id = ?",
             (beleg_id,),
         )
@@ -69,20 +73,23 @@ def test_wiki_markdown_and_rag_sync() -> None:
     }
 
     with tempfile.TemporaryDirectory() as temp_dir:
-        wiki = KarpathyLLMWikiEngine(Path(temp_dir) / "nested" / "wiki")
-        with patch("src.wiki.wiki_engine.rag_engine.index_document") as index_document:
-            page_path = wiki.create_or_update_beleg_page(doc_data, beleg_id)
+        class FakeRag:
+            def __init__(self):
+                self.calls = []
+            def index_document(self, **kwargs):
+                self.calls.append(kwargs)
+        fake_rag = FakeRag()
+        wiki = KarpathyLLMWikiEngine(Path(temp_dir) / "nested" / "wiki", rag=fake_rag)
+        page_path = wiki.create_or_update_beleg_page(doc_data, beleg_id)
 
         assert page_path.exists(), "Die Beleg-Markdown-Datei wurde nicht geschrieben."
         markdown = page_path.read_text(encoding="utf-8")
         assert beleg_id in markdown
         assert marker in markdown
-        assert "Bruttobetrag:** 234.56 EUR" in markdown
-        assert "## Zusammenfassung" in markdown
+        assert "234.56 EUR" in markdown
+        assert "## Verdichtetes Wissen" in markdown
         assert "## Indizierungstext" not in markdown
-        assert index_document.call_count == 3, (
-            "Wiki-Seite, Wiki-Index und Wiki-Log wurden nicht vollständig ins RAG synchronisiert."
-        )
+        assert len(fake_rag.calls) == 2, "Entitätsseite und Wiki-Index müssen im RAG landen."
 
         raw_path = Path(doc_data["raw_text_path"])
         if raw_path.exists():

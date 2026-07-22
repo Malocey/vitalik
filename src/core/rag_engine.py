@@ -50,6 +50,12 @@ class RAGEngine:
                 """)
                 conn.commit()
                 cursor.execute("""
+                    CREATE VIRTUAL TABLE IF NOT EXISTS belege_ocr_fts USING fts5(
+                        beleg_id UNINDEXED, rohtext, tokenize='unicode61'
+                    );
+                """)
+                conn.commit()
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS belege (
                         beleg_id TEXT PRIMARY KEY,
                         lieferant TEXT, datum TEXT, rechnungsnummer TEXT,
@@ -172,7 +178,14 @@ class RAGEngine:
                 cursor.execute("""
                     INSERT INTO belege_fts (beleg_id, lieferant, datum, betrag, rohtext)
                     VALUES (?, ?, ?, ?, ?)
-                """, (beleg_id, lieferant, datum, betrag, f"{summary}\n{rohtext}"))
+                """, (beleg_id, lieferant, datum, betrag, summary))
+                conn.commit()
+                cursor.execute("DELETE FROM belege_ocr_fts WHERE beleg_id = ?", (beleg_id,))
+                conn.commit()
+                cursor.execute(
+                    "INSERT INTO belege_ocr_fts (beleg_id, rohtext) VALUES (?, ?)",
+                    (beleg_id, str(rohtext)),
+                )
                 conn.commit()
                 logger.info(f"[RAG] Beleg {beleg_id} erfolgreich in FTS5 indiziert.")
         except sqlite3.Error as e:
@@ -196,7 +209,7 @@ class RAGEngine:
             wiki_exists = bool(row and row[0] and Path(row[0]).is_file())
             raw_exists = bool(row and row[1] and Path(row[1]).is_file())
             vector_exists = any(
-                document.get("doc_id") == f"wiki_beleg_{beleg_id}"
+                row and row[0] and document.get("source") == row[0]
                 for document in self.documents
             )
             result = {
@@ -284,6 +297,29 @@ class RAGEngine:
                         "category": "beleg",
                         "score": row["rank"] # Beachte: SQLite rank ist negativ (kleiner ist besser), aber hier nur zur Info
                     })
+                # Vollständiger OCR-Text dient nur als Fallback. Damit dominieren
+                # wiederholte Fußzeilen und AGB nicht die präzisen Belegdaten.
+                if len(results) < top_k:
+                    known = {item["doc_id"] for item in results}
+                    cursor.execute("""
+                        SELECT o.beleg_id, o.rohtext, o.rank,
+                               b.lieferant, b.datum, b.brutto
+                        FROM belege_ocr_fts AS o
+                        LEFT JOIN belege AS b USING (beleg_id)
+                        WHERE belege_ocr_fts MATCH ?
+                        ORDER BY o.rank LIMIT ?
+                    """, (match_query, top_k * 2))
+                    for row in cursor.fetchall():
+                        if row["beleg_id"] in known:
+                            continue
+                        results.append({
+                            "doc_id": row["beleg_id"],
+                            "title": f"Beleg {row['beleg_id']} ({row['datum']}) - {row['lieferant']}",
+                            "content": row["rohtext"], "source": "ocr_fallback",
+                            "category": "beleg", "score": row["rank"],
+                        })
+                        if len(results) >= top_k:
+                            break
         except sqlite3.Error as e:
             message = f"[RAG ERROR] Fehler bei FTS5 Volltextsuche: {e}"
             print(message)
@@ -521,6 +557,24 @@ class RAGEngine:
         Wenn use_fts True ist, werden auch SQLite FTS5 Ergebnisse gesucht.
         """
         results = []
+        query_words = {
+            word for word in re.findall(r"\w+", query.casefold()) if len(word) >= 3
+        }
+
+        # Verdichtete Wiki-Hubseiten zuerst: Bei einer Lieferantensuche ist eine
+        # gepflegte Entitätsseite hilfreicher als fünf fast identische Belege.
+        for doc in self.documents:
+            if category_filter and doc.get("category") != category_filter:
+                continue
+            if not str(doc.get("category", "")).startswith("wiki_"):
+                continue
+            title_words = set(re.findall(r"\w+", str(doc.get("title", "")).casefold()))
+            if query_words and query_words.issubset(title_words):
+                results.append({
+                    "doc_id": doc.get("doc_id"), "title": doc.get("title"),
+                    "content": doc.get("content"), "source": doc.get("source"),
+                    "category": doc.get("category"), "score": 1.0,
+                })
 
         # 1. FTS5 Suche für schnelle Beleg-Treffer
         if use_fts and (not category_filter or category_filter == "beleg"):
@@ -554,9 +608,17 @@ class RAGEngine:
             vec_results.sort(key=lambda x: x["score"], reverse=True)
             results.extend(vec_results[:top_k])
 
-        # Optional: Ergebnisse mischen/sortieren, aber hier belassen wir es einfach bei der kombinierten Liste
-        # FTS-Ergebnisse sind oft präziser bei exakten Suchen, daher stehen sie vorne
-        return results[:max(top_k, len(results))] # Begrenzung auf alle gefundenen, wenn nicht explizit gefiltert
+        unique = []
+        seen = set()
+        for result in results:
+            key = result.get("doc_id") or result.get("source")
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(result)
+            if len(unique) >= top_k:
+                break
+        return unique
 
     def ingest_directory(self, dir_path: Path):
         """Indexiert alle Text-, Markdown- und JSON-Dateien in einem Verzeichnis."""
