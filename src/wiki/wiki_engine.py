@@ -9,6 +9,8 @@ Implementiert das 'LLM Wiki' Konzept von Andrej Karpathy:
 """
 
 import json
+import yaml
+import sqlite3
 import hashlib
 import os
 import re
@@ -258,7 +260,7 @@ class KarpathyLLMWikiEngine:
         """
         pages = [
             p for p in self.wiki_dir.rglob("*.md")
-            if p.name.casefold() not in ["index.md", "log.md"] and "archive" not in p.parts
+            if p.name.casefold() not in ["index.md", "log.md"] and not any("archive" in part.casefold() for part in p.relative_to(self.wiki_dir).parts)
         ]
 
         content = "# 📖 VG Delikatessen LLM-Wiki Index\n"
@@ -269,20 +271,43 @@ class KarpathyLLMWikiEngine:
         categories: Dict[str, List[Dict[str, str]]] = {}
 
         for p in sorted(pages):
-            lines = p.read_text(encoding="utf-8").split("\n")
+            text = p.read_text(encoding="utf-8")
             title = p.stem.replace("_", " ").title()
             summary = "Keine Zusammenfassung"
-            cat = "Allgemein"
+            cat = None
 
+            fm = {}
+            fm_match = re.match(r"^---\n(.*?)\n---\n(.*)", text, re.DOTALL)
+            if fm_match:
+                try:
+                    fm = yaml.safe_load(fm_match.group(1)) or {}
+                except yaml.YAMLError:
+                    pass
+                text_body = fm_match.group(2)
+            else:
+                text_body = text
+
+            if fm and isinstance(fm, dict):
+                if "category" in fm:
+                    cat = str(fm["category"])
+                elif "entity_type" in fm:
+                    etype = str(fm["entity_type"])
+                    cat_map = {"supplier": "lieferant", "customer": "kunde", "article_category": "artikelart", "review_queue": "prüfung"}
+                    cat = cat_map.get(etype)
+
+            lines = text_body.split("\n")
             for line in lines:
                 if line.startswith("# "):
                     title = line.replace("# ", "").strip()
-                elif "*Kategorie:" in line:
+                elif "*Kategorie:" in line and not cat:
                     parts = line.split("|")
                     cat = parts[0].replace("*Kategorie:", "").replace("*", "").strip()
                 elif line.strip() and not line.startswith("#") and not line.startswith("*"):
-                    summary = line.strip()[:120]
-                    break
+                    if summary == "Keine Zusammenfassung":
+                        summary = line.strip()[:120]
+
+            if not cat:
+                cat = "Allgemein"
 
             if cat not in categories:
                 categories[cat] = []
@@ -321,33 +346,242 @@ class KarpathyLLMWikiEngine:
         self.log_event("COMPOUND_QUERY", f"Erkenntnis gespeichert für: '{query[:40]}'")
         return page_path
 
-    def lint_wiki(self) -> Dict[str, Any]:
+    def lint_wiki(self, output_dir=None, repair=False, db_path=None) -> Dict[str, Any]:
         """
         Karpathy Lint pass:
         Prüft das Wiki auf Waisen-Seiten (ohne Links), unvollständige Begriffe,
+        Dubletten, kaputte Links, fehlende Quellen, fehlerhaftes Frontmatter
         und stellt die Konsistenz des Vektorindex sicher.
         """
-        pages = [p for p in self.wiki_dir.glob("*.md") if p.name not in ["index.md", "log.md"]]
+        pages = [
+            p for p in self.wiki_dir.rglob("*.md")
+            if p.name.casefold() not in {"index.md", "log.md"}
+            and not any("archive" in part.casefold() for part in p.relative_to(self.wiki_dir).parts)
+        ]
+
         all_links = set()
-        orphans = []
+        incoming_links = {p.name: set() for p in pages}
+
+        broken_markdown_links = []
+        broken_wikilinks = []
+        duplicate_entity_ids = {}
+        slug_to_paths = {}
+        invalid_frontmatters = []
+        legacy_warnings = []
+        missing_sources = []
+        missing_article_categories = set()
+        entity_id_to_path = {}
+
+        db_conn = None
+        db_unavailable = False
+        if db_path is None:
+            db_path = DATA_DIR / "rag_index.db"
+
+        try:
+            db_conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            db_conn.execute("SELECT 1 FROM belege LIMIT 1")
+        except sqlite3.Error:
+            db_unavailable = True
+            if db_conn:
+                db_conn.close()
+                db_conn = None
+
+        page_names = {p.name for p in pages}
+        page_stems = {p.stem for p in pages}
 
         for p in pages:
             text = p.read_text(encoding="utf-8")
-            for other in pages:
-                if other.name != p.name and f"[{other.stem}]" in text or f"./{other.name}" in text:
-                    all_links.add(other.name)
 
-        for p in pages:
-            if p.name not in all_links and p.stem not in ["vitali_persona_und_stil", "lieferanten_und_kontenrahmen"]:
-                orphans.append(p.name)
+            # Duplicate Slugs
+            if p.stem not in slug_to_paths:
+                slug_to_paths[p.stem] = []
+            slug_to_paths[p.stem].append(str(p.relative_to(self.wiki_dir)))
+
+            # Parse frontmatter
+            fm = None
+            fm_match = re.match(r"^---\n(.*?)\n---\n(.*)", text, re.DOTALL)
+            has_fm = False
+            if fm_match:
+                has_fm = True
+                try:
+                    fm = yaml.safe_load(fm_match.group(1))
+                    if not isinstance(fm, dict):
+                        invalid_frontmatters.append(p.name)
+                        fm = None
+                except yaml.YAMLError:
+                    invalid_frontmatters.append(p.name)
+
+            is_legacy = p.stem in ["vitali_persona_und_stil", "lieferanten_und_kontenrahmen", "beleg_pipeline_anleitung"]
+
+            if not has_fm:
+                if is_legacy or "Kategorie: persona" in text or "Kategorie: buchhaltung" in text or "Kategorie: workflow" in text or "Kategorie: konzept" in text:
+                    legacy_warnings.append(p.name)
+                else:
+                    invalid_frontmatters.append(p.name)
+
+            if fm:
+                # Check required fields
+                required_fields = ["entity_id", "entity_type", "canonical_name", "source_count", "updated"]
+                if not all(k in fm for k in required_fields):
+                    invalid_frontmatters.append(p.name)
+                else:
+                    entity_id = fm.get("entity_id")
+                    if entity_id:
+                        if entity_id in entity_id_to_path:
+                            if entity_id not in duplicate_entity_ids:
+                                duplicate_entity_ids[entity_id] = [entity_id_to_path[entity_id]]
+                            duplicate_entity_ids[entity_id].append(str(p.relative_to(self.wiki_dir)))
+                        else:
+                            entity_id_to_path[entity_id] = str(p.relative_to(self.wiki_dir))
+
+                    if fm.get("entity_type") == "supplier":
+                        if "article_categories" not in fm or "skr03_accounts" not in fm:
+                            if p.name not in invalid_frontmatters:
+                                invalid_frontmatters.append(p.name)
+                        if "article_categories" in fm and isinstance(fm["article_categories"], list):
+                            for cat in fm["article_categories"]:
+                                missing_article_categories.add(cat)
+
+            # Parse links
+            # Markdown links: [label](./slug.md) or [label](slug.md)
+            md_links = re.findall(r"\[.*?\]\(\.?/?([a-zA-Z0-9_\-]+)\.md\)", text)
+            for target_stem in md_links:
+                target_name = f"{target_stem}.md"
+                if target_name in incoming_links:
+                    incoming_links[target_name].add(p.name)
+                if target_name not in page_names:
+                    broken_markdown_links.append({"from": p.name, "to": target_name})
+
+            # Wikilinks: [[slug]] or [[slug|label]]
+            wikilinks = re.findall(r"\[\[([\w\-]+)(?:\|.*?)?\]\]", text)
+            for target_stem in wikilinks:
+                target_name = f"{target_stem}.md"
+                if target_name in incoming_links:
+                    incoming_links[target_name].add(p.name)
+                if target_name not in page_names:
+                    broken_wikilinks.append({"from": p.name, "to": target_name})
+                if target_stem.startswith("article_category_"):
+                    cat_name = target_stem.replace("article_category_", "")
+                    missing_article_categories.add(cat_name)
+
+            # Check sources
+            if fm and fm.get("entity_type") in ["supplier", "review_queue"]:
+                source_matches = re.findall(r"^- `([^`]+)` \| .* \| .* \| (.*)", text, re.MULTILINE)
+                for source_id, link in source_matches:
+                    source_id = source_id.strip()
+                    if "DUBLITTE_MD5_NO_SAVE" in source_id:
+                        missing_sources.append({"page": p.name, "source_id": source_id, "status": "NON_FILE_SOURCE"})
+                        continue
+
+                    if db_unavailable:
+                        missing_sources.append({"page": p.name, "source_id": source_id, "status": "SOURCE_DATABASE_UNAVAILABLE (NOT_VERIFIABLE)"})
+                        continue
+
+                    if db_conn:
+                        cur = db_conn.cursor()
+                        cur.execute("SELECT beleg_id FROM belege WHERE beleg_id=?", (source_id,))
+                        row = cur.fetchone()
+                        if not row:
+                            missing_sources.append({"page": p.name, "source_id": source_id, "status": "MISSING_SOURCE"})
+
+        duplicate_slugs = {k: v for k, v in slug_to_paths.items() if len(v) > 1}
+
+        orphans = [p.name for p in pages if len(incoming_links[p.name]) == 0 and p.stem not in ["vitali_persona_und_stil", "lieferanten_und_kontenrahmen", "beleg_pipeline_anleitung", "index", "log"]]
+
+        # Article categories repair logic
+        existing_categories = [p.stem.replace("article_category_", "") for p in pages if p.stem.startswith("article_category_")]
+        missing_categories = sorted(list(missing_article_categories - set(existing_categories)))
+        repaired_categories = []
+
+        if repair and missing_categories:
+            categories_dir = self.wiki_dir / "entities" / "categories"
+            categories_dir.mkdir(parents=True, exist_ok=True)
+            for cat in missing_categories:
+                norm_slug = self._entity_slug(cat)
+                cat_slug = f"article_category_{norm_slug}"
+                cat_path = categories_dir / f"{cat_slug}.md"
+                if not cat_path.exists():
+                    suppliers_with_cat = []
+                    for p in pages:
+                        text = p.read_text(encoding="utf-8")
+                        fm_match = re.match(r"^---\n(.*?)\n---\n(.*)", text, re.DOTALL)
+                        if fm_match:
+                            try:
+                                fm = yaml.safe_load(fm_match.group(1))
+                                if fm and "article_categories" in fm and cat in fm["article_categories"]:
+                                    suppliers_with_cat.append(p.stem)
+                            except yaml.YAMLError:
+                                pass
+                    suppliers_with_cat.sort()
+                    relations = "\n".join([f"- [[{s}]]" for s in suppliers_with_cat])
+
+                    content = f"""---
+entity_id: "{cat_slug}"
+entity_type: article_category
+canonical_name: "{cat}"
+source_count: {len(suppliers_with_cat)}
+generated: true
+updated: "{datetime.now().strftime('%Y-%m-%d')}"
+---
+
+# {cat}
+*Kategorie: artikelart*
+
+Dies ist eine deterministisch generierte Artikelart-Seite für '{cat}'.
+
+## Verknüpfte Lieferanten/Kontakte
+{relations}
+"""
+                    cat_path.write_text(content, encoding="utf-8")
+                    repaired_categories.append(cat_slug)
+
+        if db_conn:
+            db_conn.close()
 
         report = {
             "total_pages": len(pages),
             "orphan_pages": orphans,
-            "status": "HEALTHY" if not orphans else "NEEDS_LINKING",
-            "message": f"Wiki-Lint abgeschlossen. {len(pages)} Seiten geprüft."
+            "broken_markdown_links": broken_markdown_links,
+            "broken_wikilinks": broken_wikilinks,
+            "duplicate_entity_ids": duplicate_entity_ids,
+            "duplicate_slugs": duplicate_slugs,
+            "invalid_frontmatters": invalid_frontmatters,
+            "legacy_warnings": legacy_warnings,
+            "missing_sources": missing_sources,
+            "missing_article_categories": missing_categories,
+            "repaired_categories": repaired_categories,
+            "status": "HEALTHY" if not (orphans or broken_markdown_links or broken_wikilinks or duplicate_entity_ids or duplicate_slugs or invalid_frontmatters or [s for s in missing_sources if s['status'] == 'MISSING_SOURCE']) else "ISSUES_FOUND",
         }
-        self.log_event("LINT_PASS", report["message"])
+
+        # Write reports
+        if output_dir is None:
+            output_dir = DATA_DIR / "reports" / "wiki_lint"
+        else:
+            output_dir = Path(output_dir)
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        json_path = output_dir / "wiki_lint_report.json"
+        json_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+
+        md_content = f"# Wiki Lint Report ({datetime.now().strftime('%Y-%m-%d %H:%M')})\n\n"
+        md_content += f"Status: **{report['status']}**\n"
+        md_content += f"Total Pages: {report['total_pages']}\n\n"
+
+        md_content += "## Orphans\n" + "\n".join(f"- {p}" for p in orphans) + "\n\n"
+        md_content += "## Broken Markdown Links\n" + "\n".join(f"- {l['from']} -> {l['to']}" for l in broken_markdown_links) + "\n\n"
+        md_content += "## Broken Wikilinks\n" + "\n".join(f"- {l['from']} -> {l['to']}" for l in broken_wikilinks) + "\n\n"
+        md_content += "## Duplicate Slugs\n" + "\n".join(f"- {slug}: {', '.join(paths)}" for slug, paths in duplicate_slugs.items()) + "\n\n"
+        md_content += "## Duplicate Entity IDs\n" + "\n".join(f"- {eid}: {', '.join(paths)}" for eid, paths in duplicate_entity_ids.items()) + "\n\n"
+        md_content += "## Invalid Frontmatters\n" + "\n".join(f"- {p}" for p in invalid_frontmatters) + "\n\n"
+        md_content += "## Missing Sources\n" + "\n".join(f"- {s['page']} -> {s['source_id']} ({s['status']})" for s in missing_sources) + "\n\n"
+        md_content += "## Missing Article Categories\n" + "\n".join(f"- {c}" for c in missing_categories) + "\n\n"
+        md_content += "## Repaired Categories\n" + "\n".join(f"- {c}" for c in repaired_categories) + "\n\n"
+
+        md_path = output_dir / "wiki_lint_report.md"
+        md_path.write_text(md_content, encoding="utf-8")
+
+        self.log_event("LINT_PASS", f"Wiki-Lint abgeschlossen. {len(pages)} Seiten geprüft. Status: {report['status']}")
         return report
 
     def initialize_default_wiki(self):
@@ -405,7 +639,7 @@ class KarpathyLLMWikiEngine:
         pages = [
             page for page in self.wiki_dir.rglob("*.md")
             if page.name.casefold() not in {"index.md", "log.md"}
-            and "archive" not in page.relative_to(self.wiki_dir).parts
+            and not any("archive" in part.casefold() for part in page.relative_to(self.wiki_dir).parts)
         ]
         page_metadata = {}
         
@@ -442,7 +676,7 @@ class KarpathyLLMWikiEngine:
             text = p.read_text(encoding="utf-8")
             
             # Wikilinks: [[slug]] oder [[slug|label]]
-            wikilinks = re.findall(r"\[\[([a-zA-Z0-9_\-]+)(?:\|.*?)?\]\]", text)
+            wikilinks = re.findall(r"\[\[([\w\-]+)(?:\|.*?)?\]\]", text)
             # Markdown-Links: [label](./slug.md)
             md_links = re.findall(r"\[.*?\]\(\.\/([a-zA-Z0-9_\-]+)\.md\)", text)
             
