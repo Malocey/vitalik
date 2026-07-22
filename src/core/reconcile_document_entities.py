@@ -59,8 +59,11 @@ def backup_database(db_path: Path, backup_dir_base: Optional[str] = None) -> Non
 def normalize_text(text: str) -> str:
     if not text:
         return ""
-    text = unicodedata.normalize("NFKC", str(text)).casefold()
-    return re.sub(r'[^a-z0-9]', '', text)
+    text = unicodedata.normalize("NFKD", str(text).casefold())
+    return "".join(
+        character for character in text
+        if not unicodedata.combining(character) and character.isalnum()
+    )
 
 def find_entities_by_strong_id(value: str, id_type: str, entities: List[Dict[str, Any]]) -> Set[str]:
     found = set()
@@ -202,7 +205,7 @@ def reconcile_entities(db_path: str, report_dir: Optional[str] = None, apply: bo
 
             weak_entities = set()
             for al in aliases:
-                norm_alias = al["normalized_alias"]
+                norm_alias = normalize_text(al["normalized_alias"])
                 if len(norm_alias) > 3 and (norm_alias in normalize_text(filename) or norm_alias in normalize_text(supplier_name) or norm_alias in normalize_text(raw_text)):
                     weak_entities.add(al["entity_id"])
 

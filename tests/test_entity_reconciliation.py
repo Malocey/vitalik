@@ -126,16 +126,8 @@ def test_wrong_contact_role(temp_db, tmp_path):
     assert "Rolle 'customer'" in content
 
 def test_unicode_normalization():
-    assert normalize_text("Hämmer") == "haemmer" or normalize_text("Hämmer") == "hmmer" or "mmer" in normalize_text("Hämmer")
-
-    # NFKC fold
-    import unicodedata
-    import re
-    def norm(text):
-        text = unicodedata.normalize("NFKC", str(text)).casefold()
-        return re.sub(r'[^a-z0-9]', '', text)
-
-    assert norm("Hämmer") == "hmmer" or norm("Hämmer") == "haemmer" or "h" in norm("Hämmer") # It strips ä since it's not a-z0-9, which is expected by the simplistic regex
+    assert normalize_text("Hämmer") == "hammer"
+    assert normalize_text("Straße 12") == "strasse12"
 
 def test_unreadable_source_file(temp_db, tmp_path):
     # Insert a beleg with a non-existent path

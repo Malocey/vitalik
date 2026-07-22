@@ -12,7 +12,7 @@ def test_calculate_metrics():
         query_type="entity",
         expected_entity_id="wiki_1",
         expected_doc_ids=["doc_1", "doc_2"],
-        allowed_categories=["beleg"],
+        allowed_categories=["wiki_lieferant", "beleg"],
         expected_sources=["wiki"]
     )
 
@@ -126,3 +126,20 @@ def test_fixture_ocr_fallback():
 
         assert res["metrics"]["source_hit_rates"]["ocr_fallback_usage"] > 0
         assert res["metrics"]["source_hit_rates"]["correct_only_by_ocr"] > 0
+
+
+def test_disallowed_category_and_source_do_not_count_as_hit():
+    gt = GroundTruthItem(
+        query_id="restricted", query="Jensmann", query_type="entity",
+        expected_entity_id="wiki_jensmann", expected_doc_ids=[],
+        allowed_categories=["wiki_lieferant"], expected_sources=["wiki"],
+    )
+    metrics = calculate_metrics([{
+        "ground_truth": gt,
+        "retrieved": [{
+            "doc_id": "wiki_jensmann", "category": "beleg", "source": "fts5"
+        }],
+    }], {})
+    assert metrics["overall"]["hit@1"] == 0.0
+    assert metrics["overall"]["category_violation_rate"] == 1.0
+    assert metrics["overall"]["source_violation_rate"] == 1.0

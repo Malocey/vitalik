@@ -60,6 +60,8 @@ def calculate_metrics(results: List[Dict[str, Any]], thresholds: Dict[str, float
             "false_entity_rate": 0.0,
             "entity_miss_rate": 0.0,
             "exact_supplier_hub_first_rate": 0.0,
+            "category_violation_rate": 0.0,
+            "source_violation_rate": 0.0,
         },
         "by_type": defaultdict(lambda: {
             "total_queries": 0,
@@ -90,6 +92,9 @@ def calculate_metrics(results: List[Dict[str, Any]], thresholds: Dict[str, float
     false_entities = 0
     entity_misses = 0
     exact_supplier_hub_first = 0
+    category_violations = 0
+    source_violations = 0
+    relevant_result_count = 0
 
     for res in results:
         gt: GroundTruthItem = res["ground_truth"]
@@ -113,10 +118,15 @@ def calculate_metrics(results: List[Dict[str, Any]], thresholds: Dict[str, float
             source = doc.get("source")
             category = doc.get("category")
 
-            if category not in gt.allowed_categories and category and gt.allowed_categories:
-                logger.debug(f"Retrieved doc {doc_id} has unallowed category {category}")
-            if source not in gt.expected_sources and source and gt.expected_sources:
-                logger.debug(f"Retrieved doc {doc_id} has unexpected source {source}")
+            category_allowed = not gt.allowed_categories or category in gt.allowed_categories
+            source_allowed = not gt.expected_sources or source in gt.expected_sources
+            is_expected_result = doc_id == expected_entity or doc_id in expected_docs
+            if is_expected_result:
+                relevant_result_count += 1
+                if not category_allowed:
+                    category_violations += 1
+                if not source_allowed:
+                    source_violations += 1
 
             metrics["sources"][source] += 1
 
@@ -124,9 +134,9 @@ def calculate_metrics(results: List[Dict[str, Any]], thresholds: Dict[str, float
                 has_duplicate = True
             seen_docs.add(doc_id)
 
-            if expected_entity and doc_id == expected_entity:
+            if expected_entity and doc_id == expected_entity and category_allowed and source_allowed:
                 hit_positions.append(i + 1)
-            elif expected_docs and doc_id in expected_docs:
+            elif expected_docs and doc_id in expected_docs and category_allowed and source_allowed:
                 hit_positions.append(i + 1)
 
             if expected_entity and str(category).startswith("wiki_") and first_entity_hit is None:
@@ -180,6 +190,9 @@ def calculate_metrics(results: List[Dict[str, Any]], thresholds: Dict[str, float
     metrics["overall"]["hit@5"] = hits_at_5 / total
     metrics["overall"]["mrr"] = mrr_sum / total
     metrics["overall"]["duplicate_query_rate@5"] = duplicates / total
+    relevant_denominator = max(1, relevant_result_count)
+    metrics["overall"]["category_violation_rate"] = category_violations / relevant_denominator
+    metrics["overall"]["source_violation_rate"] = source_violations / relevant_denominator
 
     if entity_queries > 0:
         metrics["overall"]["false_entity_rate"] = false_entities / entity_queries
@@ -302,7 +315,11 @@ def run_benchmark(mode: str, ground_truth_path: Path, output_dir: Path, threshol
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
-            test_engine = RAGEngine(llm_client=mock_llm_client)
+            # Konstruktor absichtlich umgehen: RAGEngine.__init__ öffnet sonst
+            # vor dem Pfad-Override kurz die konfigurierte Produktionsdatenbank.
+            test_engine = object.__new__(RAGEngine)
+            test_engine.llm_client = mock_llm_client
+            test_engine.documents = []
             test_engine.db_path = temp_dir_path / "mock_rag.db"
             test_engine.index_file = temp_dir_path / "mock_index.json"
             test_engine._init_sqlite_db()
