@@ -5,8 +5,8 @@
 Das Dashboard lauscht ausschließlich auf `127.0.0.1:8000`. Tailscale Serve stellt
 es privat per HTTPS im Tailnet bereit. Es gibt keine Router-Portfreigabe und keinen
 Tailscale Funnel. Identitätsheader werden nur von einem Loopback-Proxy akzeptiert.
-Der macOS-Dienst trägt automatisch den Besitzer des lokalen Tailscale-Geräts als
-`REMOTE_ADMIN_USERS` ein.
+Der macOS-Dienst verwendet `REMOTE_ADMIN_USERS`, wenn die Variable beim Installieren
+gesetzt ist. Ohne Vorgabe wird der Besitzer des lokalen Tailscale-Geräts verwendet.
 
 Das Control Center unter `/admin` bietet:
 
@@ -25,13 +25,18 @@ werden nicht unmaskiert an den Browser ausgegeben.
 ## Automatische macOS-Installation
 
 ```bash
-bash scripts/install_control_center_macos.sh
+REMOTE_ADMIN_USERS="gdamien00@gmail.com" bash scripts/install_control_center_macos.sh
 ```
 
 Das Skript installiert Python-Abhängigkeiten, erzeugt einen LaunchAgent, erkennt
 den angemeldeten Tailscale-Besitzer, startet das Dashboard bei jeder Anmeldung und
 aktiviert Tailscale Serve. Die persönliche Passkey-/Hardware-Key-Registrierung
 bleibt eine einmalige Identitätsaktion im Tailscale-Konto.
+
+Für den Zugriff von außen muss exakt diese Google-Identität Mitglied oder
+freigegebener externer Nutzer des privaten Tailnets sein. Auf dem externen Gerät
+wird Tailscale installiert und mit derselben Adresse angemeldet. Das Dashboard
+bleibt über Tailscale Serve privat; Funnel und Router-Portfreigaben bleiben aus.
 
 ## Desktopzugriff
 

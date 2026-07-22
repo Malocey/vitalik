@@ -9,12 +9,13 @@ LOG_DIR="$PROJECT_ROOT/data/logs"
 
 mkdir -p "$HOME/Library/LaunchAgents" "$LOG_DIR" "$PROJECT_ROOT/data/inbox"
 
-ADMIN_LOGIN="$($TAILSCALE_BIN status --json | "$PYTHON_BIN" -c '
+TAILSCALE_OWNER_LOGIN="$($TAILSCALE_BIN status --json | "$PYTHON_BIN" -c '
 import json, sys
 d=json.load(sys.stdin)
 uid=str(d["Self"]["UserID"])
 print(d["User"][uid]["LoginName"])
 ')"
+ADMIN_LOGIN="${REMOTE_ADMIN_USERS:-$TAILSCALE_OWNER_LOGIN}"
 
 "$PYTHON_BIN" -m pip install --user -r "$PROJECT_ROOT/requirements.txt"
 
