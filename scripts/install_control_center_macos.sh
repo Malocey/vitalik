@@ -38,4 +38,4 @@ launchctl kickstart -k "gui/$UID/de.vg-delikatessen.control-center"
 
 echo "Control Center installiert."
 echo "Admin: $ADMIN_LOGIN"
-echo "Privater Name: https://$(hostname | tr '[:upper:] ' '[:lower:]-').$(tailscale status --json | "$PYTHON_BIN" -c 'import json,sys; print(json.load(sys.stdin)["MagicDNSSuffix"])')"
+echo "Privater Name: https://$($TAILSCALE_BIN status --json | "$PYTHON_BIN" -c 'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))')"
