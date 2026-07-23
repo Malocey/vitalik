@@ -51,3 +51,7 @@ DEFAULT_EMBEDDING_MODEL = os.getenv("DEFAULT_EMBEDDING_MODEL", "nomic-embed-text
 PERSONA_PROFILE_FILE = DATA_DIR / "persona_profile.json"
 SKR_MAPPING_FILE = DATA_DIR / "skr_mapping.json"
 CHECKPOINT_FILE = DATA_DIR / "checkpoint.json"
+
+# sevDesk Konfiguration
+SEVDESK_API_TOKEN = os.getenv("SEVDESK_API_TOKEN", "")
+USE_MOCK_SEVDESK = os.getenv("USE_MOCK_SEVDESK", "True").lower() in ("true", "1", "yes")

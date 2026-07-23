@@ -24,6 +24,8 @@ from src.core.contact_memory import contact_memory
 from src.core.pipeline_job_adapter import pipeline_job_adapter
 from src.core.admin_service import processing_control
 from src.core.mocks import mock_drive, mock_telegram, mock_sevdesk
+from src.core.sevdesk_client import sevdesk_client
+from src.core.config import USE_MOCK_SEVDESK
 from src.drive.sorter import DriveSorter
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -276,7 +278,21 @@ class ArchivePipeline:
                         and enriched_doc.get("validation_status") == "PASSED"
                         and enriched_doc.get("persistence_verified") is True
                     ):
-                        mock_sevdesk.post_voucher(enriched_doc)
+                        if USE_MOCK_SEVDESK:
+                            mock_sevdesk.post_voucher(enriched_doc)
+                        else:
+                            try:
+                                logger.info(f"[Pipeline] Sende Beleg an reale sevDesk API...")
+                                # Beleg anlegen
+                                voucher_res = sevdesk_client.create_voucher(enriched_doc)
+                                voucher_id = voucher_res.get("voucher", {}).get("id")
+
+                                # Datei anhängen
+                                if voucher_id and saved_path and Path(saved_path).exists():
+                                    sevdesk_client.upload_voucher_file(str(voucher_id), Path(saved_path))
+                                    logger.info(f"[Pipeline] Datei {saved_path} an sevDesk Beleg {voucher_id} angehängt.")
+                            except Exception as sevdesk_err:
+                                logger.error(f"[Pipeline] Fehler bei der realen sevDesk API: {sevdesk_err}")
 
                     # Telegram Push
                     telegram_msg = mock_telegram.send_approval_request(enriched_doc)
