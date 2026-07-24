@@ -55,6 +55,7 @@ sichere Ordnerlauf liegt in `src/core/process_document_folder.py`.
 | Preis-Monitor | `price_monitor.py` | Einzelpreise & Inflationswarnungen verfolgen | integriert |
 | E-Mail KI | `email_decision_engine.py`, `email_draft_generator.py` | Absichtserkennung & KI-Antwort-Entwürfe | integriert |
 | sevDesk Anbindung | `sevdesk_client.py`, `sevdesk_sync.py`, `mcp_sevdesk.py` | Echte API-Anbindung, Beleg-Synchronisation und MCP-Server für LLMs | integriert |
+| KI Langzeitgedächtnis | `mcp_rag.py` | RAG MCP-Server, ermöglicht aktives Lesen und Schreiben von Erinnerungen | integriert |
 
 ## Persistenz und Daten
 
@@ -104,6 +105,10 @@ verhindern Dubletten. Details stehen in [contact_memory.md](contact_memory.md).
 ## sevDesk API & MCP Integration
 
 Das System kommuniziert am Ende der Verarbeitungspipeline mit sevDesk, um Belege (Voucher) inklusive der PDF-Anhänge hochzuladen. Zusätzlich existiert ein Synchronisations-Job für den Download von externen Belegen und ein **MCP Server (Model Context Protocol)**, über den lokale KI-Modelle autonom Ausgangsrechnungen, Briefe und Kontakte in sevDesk erstellen können. Details stehen in [SEVDESK_INTEGRATION.md](SEVDESK_INTEGRATION.md).
+
+## KI Langzeitgedächtnis (RAG MCP)
+
+Über `src/core/mcp_rag.py` wird die lokale `RAGEngine` als MCP-Server für KI-Agenten bereitgestellt. Dies befähigt die KI, nicht nur Belege und Wiki-Wissen zu durchsuchen (`search_memory`), sondern proaktiv neue Gedanken, Kundennotizen und Zusammenfassungen als Vektoren abzuspeichern (`memorize_thought`). Dadurch baut sich die KI ein persistentes Langzeitgedächtnis auf, das projektübergreifend zur Verfügung steht.
 
 Fast Lane entscheidet vor dem LLM-Aufruf zwischen `FAST_LANE`,
 `TARGETED_LLM`, `FULL_LLM`, `MANUAL_REVIEW` und `REJECTED`. Sie ist produktiv in
