@@ -219,11 +219,13 @@ async def post_admin_action(request: Request, command: AdminActionRequest):
 @app.get("/api/wiki")
 async def get_wiki():
     pages = []
-    for p in sorted(WIKI_DIR.glob("*.md")):
-        if p.name in ["index.md", "log.md"]:
+    for p in sorted(WIKI_DIR.rglob("*.md")):
+        if p.name.casefold() in ["index.md", "log.md"] or any("archive" in part.casefold() for part in p.relative_to(WIKI_DIR).parts):
             continue
+        rel_path = p.relative_to(WIKI_DIR).with_suffix('').as_posix()
+        node_id = f"wiki:{rel_path}"
         pages.append({
-            "slug": p.stem,
+            "slug": node_id,
             "title": p.stem.replace("_", " ").title(),
             "content": p.read_text(encoding="utf-8")
         })
@@ -243,7 +245,8 @@ async def get_wiki_log():
 
 @app.get("/api/wiki-graph")
 async def get_wiki_graph_data():
-    return wiki_engine.get_graph_data()
+    db_path = str(DATA_DIR / "rag_index.db")
+    return wiki_engine.get_graph_data(db_path=db_path)
 
 @app.post("/api/rag")
 async def post_rag(request: QueryRequest):
