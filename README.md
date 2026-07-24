@@ -17,6 +17,7 @@ Extraktion, optionalen LM-Studio-Workern, SQLite-FTS5-RAG, Wiki und CSV-Inventar
 - [Abnahmetest mit 120 Dokumenten](docs/DOCUMENT_ACCEPTANCE_TEST.md)
 - [Wiki-Audit vom 22. Juli 2026](docs/WIKI_AUDIT_2026-07-22.md)
 - [Drei dringende Jules-Aufträge](docs/JULES_URGENT_TASKS.md)
+- [sevDesk Integration & MCP-Server](docs/SEVDESK_INTEGRATION.md)
 
 ## Sichere lokale Prüfungen
 

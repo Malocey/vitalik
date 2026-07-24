@@ -5,7 +5,7 @@ from src.core.sevdesk_client import sevdesk_client
 from src.core.config import USE_MOCK_SEVDESK
 
 # Initialize FastMCP server
-mcp = FastMCP("sevDesk", description="Integriert sevDesk Funktionen wie Rechnungen, Kontakte und Belege")
+mcp = FastMCP("sevDesk")
 
 @mcp.tool()
 def get_sevdesk_status() -> str:
