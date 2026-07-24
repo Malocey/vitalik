@@ -70,9 +70,17 @@ class SevDeskClient:
             }
         }
 
-        # Hinweis: Um es als Beleg anzulegen, braucht man eine Position.
-        # Das hier ist ein vereinfachtes Format zum Erstellen eines Factory-Objekts,
-        # oft verlangt die API einen Factory-Endpoint, z.B. Voucher/Factory/saveVoucher
+        # Belege müssen in sevDesk mindestens eine Position (VoucherPos) haben.
+        payload["voucherPosSave"] = [
+            {
+                "name": doc_data.get("description", "Importierter Beleg Position"),
+                "sumNet": doc_data.get("netto", 0.0),
+                "sumTax": doc_data.get("steuer", 0.0),
+                "sumGross": doc_data.get("brutto", 0.0),
+                "taxRate": 19, # Kann dynamisch berechnet oder gesetzt werden
+                "objectName": "VoucherPos"
+            }
+        ]
 
         response = self._request("POST", "Voucher/Factory/saveVoucher", json=payload)
         return response.get("objects", {})
@@ -114,7 +122,8 @@ class SevDeskClient:
 
         url = f"{self.BASE_URL}/{endpoint}"
         try:
-            response = requests.get(url, headers=self.headers, stream=True)
+            # ?download=true ensures sevDesk returns the raw PDF binary instead of Base64 JSON
+            response = requests.get(url, params={"download": "true"}, headers=self.headers, stream=True)
             response.raise_for_status()
 
             target_path = target_dir / f"sevdesk_{voucher_id}.pdf"
@@ -126,6 +135,98 @@ class SevDeskClient:
         except requests.exceptions.RequestException as e:
             logger.error(f"[SevDesk] Fehler beim Download des Belegs {voucher_id}: {e}")
             return None
+
+    # --- Rechnungen (Invoices) ---
+    def create_invoice(self, invoice_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Erstellt eine Ausgangsrechnung (Invoice) in sevDesk.
+        Erwartet Struktur mit contact_id, header, positions (name, price, quantity, taxRate).
+        """
+        import datetime
+        now = datetime.datetime.now()
+        formatted_date = now.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
+        # Factory/saveInvoice erwartet invoice und invoicePosSave
+        payload = {
+            "invoice": {
+                "invoiceDate": formatted_date,
+                "header": invoice_data.get("header", "Rechnung von VG Delikatessen"),
+                "contact": {
+                    "id": invoice_data.get("contact_id"),
+                    "objectName": "Contact"
+                },
+                "status": "100",  # Entwurf
+                "taxRate": invoice_data.get("taxRate", 19),
+                "taxType": "default"
+            },
+            "invoicePosSave": [
+                {
+                    "name": pos.get("name"),
+                    "quantity": pos.get("quantity", 1),
+                    "price": pos.get("price", 0.0),
+                    "taxRate": pos.get("taxRate", 19),
+                    "objectName": "InvoicePos"
+                }
+                for pos in invoice_data.get("positions", [])
+            ]
+        }
+
+        response = self._request("POST", "Invoice/Factory/saveInvoice", json=payload)
+        return response.get("objects", {})
+
+    # --- Kontakte (Contacts) ---
+    def get_contacts(self, depth: int = 0) -> List[Dict[str, Any]]:
+        """Ruft alle Kontakte (Kunden/Lieferanten) aus sevDesk ab."""
+        data = self._request("GET", "Contact", params={"depth": depth})
+        return data.get("objects", [])
+
+    def create_contact(self, contact_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Legt einen neuen Kontakt an (organization oder person).
+        """
+        payload = {
+            "name": contact_data.get("name"),
+            "category": {
+                "id": contact_data.get("category_id", 3),  # Standard: 3 = Lieferant, 4 = Kunde etc. (je nach Account)
+                "objectName": "Category"
+            }
+        }
+        response = self._request("POST", "Contact", json=payload)
+        return response.get("objects", {})
+
+    # --- Briefe (Letters) ---
+    def create_letter(self, letter_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Erstellt einen Geschäftsbrief über die sevDesk API.
+        """
+        payload = {
+            "contact": {
+                "id": letter_data.get("contact_id"),
+                "objectName": "Contact"
+            },
+            "subject": letter_data.get("subject", "Geschäftsbrief"),
+            "text": letter_data.get("text", ""),
+            "status": "100"  # Entwurf
+        }
+        response = self._request("POST", "Letter", json=payload)
+        return response.get("objects", {})
+
+    # --- Transaktionen (Transactions/CheckAccountTransaction) ---
+    def get_transactions(self) -> List[Dict[str, Any]]:
+        """
+        Ruft Bank-Transaktionen ab.
+        """
+        data = self._request("GET", "CheckAccountTransaction")
+        return data.get("objects", [])
+
+    # --- Artikel & Inventar (Parts) ---
+    def get_parts(self) -> List[Dict[str, Any]]:
+        """
+        Ruft den Artikelstamm ab.
+        """
+        data = self._request("GET", "Part")
+        return data.get("objects", [])
+
 
 # Globale Instanz, die bei Bedarf geladen wird
 sevdesk_client = SevDeskClient()
