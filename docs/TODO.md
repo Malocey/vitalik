@@ -11,5 +11,6 @@ Diese Liste sammelt geplante Features und strategische Erweiterungen für das Di
 - [ ] **sevDesk Deep-Dive:** Tools zur Konvertierung von Angeboten in Rechnungen und zum Prüfen offener Posten (Mahnwesen).
 
 ## Architektur & Pipeline
+- [ ] **Höchste Priorität: Hybride Streaming-Architektur V2:** Umbau der `PDFEngine` auf ein "Sliding Window" (Scanner liest immer nur z.B. 3 Dokumente im Voraus, um RAM-Abstürze bei 160-Seiten-Scans zu verhindern). Einführung einer lernfähigen Layout-Datenbank, damit deterministische Skripte die Datenextraktion übernehmen und die KI nur noch als Fallback bei unbekannten Layouts einspringt. (Siehe `docs/STREAMING_ARCHITECTURE_V2.md`).
 - [ ] Evaluierung des Fast Lane Benchmarks.
 - [ ] Verknüpfung des Preis-Monitors (Inflationstracking) mit den Artikelpreisen in sevDesk.

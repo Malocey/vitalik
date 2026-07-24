@@ -653,7 +653,13 @@ Dies ist eine deterministisch generierte Artikelart-Seite für '{cat}'.
         Gibt eine Liste aller Markdown-Seiten im Wiki (oder in einem Unterordner) zurück.
         """
         pages = []
-        target_dir = self.wiki_dir / sub_dir
+        target_dir = (self.wiki_dir / sub_dir).resolve()
+
+        # Security Check: Path Traversal verhindern
+        if not target_dir.is_relative_to(self.wiki_dir.resolve()):
+            self.logger.error("[Wiki Security] Versuchter Path Traversal Zugriff blockiert.")
+            return pages
+
         if not target_dir.exists():
             return pages
 
@@ -669,7 +675,13 @@ Dies ist eine deterministisch generierte Artikelart-Seite für '{cat}'.
         """
         Liest den exakten Markdown-Inhalt einer Wiki-Seite aus.
         """
-        file_path = self.wiki_dir / f"{slug}.md"
+        file_path = (self.wiki_dir / f"{slug}.md").resolve()
+
+        # Security Check: Path Traversal verhindern
+        if not file_path.is_relative_to(self.wiki_dir.resolve()):
+            self.logger.error("[Wiki Security] Versuchter Path Traversal Zugriff blockiert.")
+            return None
+
         if file_path.exists():
             try:
                 return file_path.read_text(encoding="utf-8")
