@@ -648,6 +648,35 @@ Dies ist eine deterministisch generierte Artikelart-Seite für '{cat}'.
 
         self.log_event("INITIALIZE", "Karpathy LLM-Wiki erfolgreich initialisiert.")
 
+    def list_pages(self, sub_dir: str = "") -> List[Dict[str, str]]:
+        """
+        Gibt eine Liste aller Markdown-Seiten im Wiki (oder in einem Unterordner) zurück.
+        """
+        pages = []
+        target_dir = self.wiki_dir / sub_dir
+        if not target_dir.exists():
+            return pages
+
+        for file in target_dir.rglob("*.md"):
+            if "archive" in file.parts or ".obsidian" in file.parts:
+                continue
+            # Slug ist der relative Pfad ohne .md
+            slug = str(file.relative_to(self.wiki_dir)).replace("\\", "/").removesuffix(".md")
+            pages.append({"slug": slug, "title": file.stem})
+        return pages
+
+    def read_page(self, slug: str) -> Optional[str]:
+        """
+        Liest den exakten Markdown-Inhalt einer Wiki-Seite aus.
+        """
+        file_path = self.wiki_dir / f"{slug}.md"
+        if file_path.exists():
+            try:
+                return file_path.read_text(encoding="utf-8")
+            except Exception as e:
+                self.logger.error(f"[Wiki] Fehler beim Lesen von {slug}: {e}")
+        return None
+
     def get_graph_data(self) -> Dict[str, List[Dict[str, Any]]]:
         """
         Analysiert alle Wiki-Seiten und extrahiert Knoten (Nodes) und Verknüpfungen (Edges)

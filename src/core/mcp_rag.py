@@ -3,6 +3,7 @@ import uuid
 from typing import Optional
 from fastmcp import FastMCP
 from src.core.rag_engine import rag_engine
+from src.wiki.wiki_engine import wiki_engine
 
 # Initialisiere den FastMCP Server für das KI Langzeitgedächtnis
 mcp = FastMCP("VG_Memory", description="KI Langzeitgedächtnis (RAG) für Suche und Speicherung von Gedanken.")
@@ -67,6 +68,64 @@ def memorize_thought(title: str, content: str, category: str = "gedanke") -> str
             "status": "error",
             "message": f"Fehler beim Speichern der Erinnerung: {e}"
         })
+
+@mcp.tool()
+def list_wiki_pages(sub_dir: str = "") -> str:
+    """
+    Listet alle strukturierten Wiki-Seiten auf.
+    sub_dir: Optional (z.B. "Kunden" oder "Rezepte").
+    Verwende dies, um zu sehen, welche strukturierten Dokumentationen bereits existieren.
+    """
+    try:
+        pages = wiki_engine.list_pages(sub_dir)
+        return json.dumps({"status": "success", "pages": pages}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+@mcp.tool()
+def read_wiki_page(slug: str) -> str:
+    """
+    Liest den exakten Inhalt einer strukturierten Wiki-Seite im Markdown-Format.
+    slug: Der Bezeichner der Seite (z.B. "kunden/mueller" oder "prozesse/rechnungsstellung").
+    """
+    try:
+        content = wiki_engine.read_page(slug)
+        if content:
+            return json.dumps({"status": "success", "content": content})
+        return json.dumps({"status": "error", "message": "Seite nicht gefunden."})
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+@mcp.tool()
+def write_wiki_page(slug: str, title: str, category: str, content: str) -> str:
+    """
+    Erstellt oder überschreibt eine dauerhafte, strukturierte Wiki-Seite im Markdown-Format.
+
+    WICHTIGE BEST PRACTICES (WIKI_AI_GUIDELINES):
+    1. content MUSS reines Markdown sein. Tabellen (|, -) sind erlaubt. KEIN HTML (wie <div>, <span>).
+    2. Der content MUSS ohne YAML-Frontmatter übergeben werden (die Engine generiert das Frontmatter automatisch aus slug, title, category).
+    3. Nutze Obsidian-Links [[Slugs]] innerhalb des contents, um andere Wiki-Seiten zu verlinken!
+
+    slug: Eindeutiger Pfad (z.B. "kunden/meier_catering", kleingeschrieben).
+    title: Menschlicher Titel (z.B. "Meier Catering").
+    category: Art des Dokuments (z.B. "kunde", "rezept", "prozess").
+    content: Der Markdown-Text (ohne Frontmatter).
+    """
+    try:
+        # Die wiki_engine.create_or_update_page generiert das Frontmatter automatisch und
+        # stößt den RAG-Index sofort an!
+        saved_path = wiki_engine.create_or_update_page(
+            slug=slug,
+            title=title,
+            content=content,
+            category=category
+        )
+        return json.dumps({
+            "status": "success",
+            "message": f"Wiki-Seite erfolgreich unter {saved_path} erstellt und im RAG-Index verankert."
+        })
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
 
 if __name__ == "__main__":
     # Startet den Server (stdio-basiert, perfekt für Claude Desktop & co)

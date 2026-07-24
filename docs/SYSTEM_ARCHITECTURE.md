@@ -108,7 +108,9 @@ Das System kommuniziert am Ende der Verarbeitungspipeline mit sevDesk, um Belege
 
 ## KI Langzeitgedächtnis (RAG MCP)
 
-Über `src/core/mcp_rag.py` wird die lokale `RAGEngine` als MCP-Server für KI-Agenten bereitgestellt. Dies befähigt die KI, nicht nur Belege und Wiki-Wissen zu durchsuchen (`search_memory`), sondern proaktiv neue Gedanken, Kundennotizen und Zusammenfassungen als Vektoren abzuspeichern (`memorize_thought`). Dadurch baut sich die KI ein persistentes Langzeitgedächtnis auf, das projektübergreifend zur Verfügung steht.
+Über `src/core/mcp_rag.py` wird die lokale `RAGEngine` und die `wiki_engine.py` als MCP-Server für externe KI-Agenten bereitgestellt. Dies befähigt die KI zu zwei Dingen:
+1. **Flüchtige Vektoren:** Belege und Wiki-Wissen zu durchsuchen (`search_memory`), sowie proaktiv neue Gedanken, Kundennotizen und Zusammenfassungen als Vektoren abzuspeichern (`memorize_thought`).
+2. **Strukturierte Wiki-Seiten:** Die KI agiert als vollumfänglicher Knowledge-Base-Manager. Sie kann Inhaltsverzeichnisse lesen (`list_wiki_pages`), den Markdown-Inhalt erfassen (`read_wiki_page`) und komplett neue, RAG-indizierte Wiki-Seiten schreiben (`write_wiki_page`). Alle Regeln dafür sind in `docs/WIKI_AI_GUIDELINES.md` definiert.
 
 Fast Lane entscheidet vor dem LLM-Aufruf zwischen `FAST_LANE`,
 `TARGETED_LLM`, `FULL_LLM`, `MANUAL_REVIEW` und `REJECTED`. Sie ist produktiv in
